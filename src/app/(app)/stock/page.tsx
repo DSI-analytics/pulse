@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
 import { createInventoryItemRecord } from "@/server/crud-actions";
+import { MovimentoStock } from "@/components/movimento-stock";
+import { formatDateTimePt } from "@/lib/datetime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +20,25 @@ function daysUntil(date: Date | null): number | null {
 
 export default async function StockPage() {
   const user = await requirePermission("inventory.view");
-  const [items, categories] = await Promise.all([
+  const [items, categories, movements] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: { clinicId: user.clinicId },
       orderBy: { name: "asc" },
       include: { category: { select: { name: true } }, supplier: { select: { name: true } } },
     }),
     prisma.inventoryCategory.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.inventoryMovement.findMany({
+      where: { clinicId: user.clinicId },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+      select: {
+        id: true, type: true, quantity: true, reason: true, createdAt: true,
+        item: { select: { name: true, unit: true } },
+      },
+    }),
   ]);
+  const canManage = can(user.role, "inventory.manage");
+  const stockOptions = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, currentStock: i.currentStock }));
 
   const alerts: { icon: any; tone: "danger" | "warning"; text: string }[] = [];
   for (const i of items) {
@@ -47,7 +60,9 @@ export default async function StockPage() {
         title="Stock"
         description={`${items.length} artigos · materiais clínicos e operacionais`}
         actions={
-          can(user.role, "inventory.manage") ? (
+          canManage ? (
+            <>
+            <MovimentoStock items={stockOptions} />
             <CadastroButton
               label="Novo artigo"
               title="Novo artigo de stock"
@@ -62,6 +77,7 @@ export default async function StockPage() {
                 { name: "purchasePrice", label: "Custo unitário", type: "money", suffix: "MZN", placeholder: "850" },
               ]}
             />
+            </>
           ) : undefined
         }
       />
@@ -95,6 +111,7 @@ export default async function StockPage() {
                 <TableHead className="text-right">Custo unit.</TableHead>
                 <TableHead>Validade</TableHead>
                 <TableHead>Estado</TableHead>
+                {canManage && <TableHead className="text-right">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -118,6 +135,14 @@ export default async function StockPage() {
                     <TableCell className="text-right tabular">{formatMZN(i.avgCost)}</TableCell>
                     <TableCell className="text-[13px] text-muted-foreground">{i.expiryDate ? formatDateShort(i.expiryDate) : "—"}</TableCell>
                     <TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell>
+                    {canManage && (
+                      <TableCell className="text-right">
+                        <MovimentoStock
+                          items={stockOptions}
+                          item={{ id: i.id, name: i.name, unit: i.unit, currentStock: i.currentStock }}
+                        />
+                      </TableCell>
+                    )}
                   </TableRow>
                 );
               })}
@@ -125,6 +150,51 @@ export default async function StockPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle>Movimentos recentes</CardTitle></CardHeader>
+        <CardContent className="pt-0">
+          {movements.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">Ainda não há movimentos registados.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Artigo</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead className="text-right">Quantidade</TableHead>
+                  <TableHead>Motivo</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movements.map((m) => (
+                  <TableRow key={m.id}>
+                    <TableCell className="text-[13px] text-muted-foreground">{formatDateTimePt(m.createdAt)}</TableCell>
+                    <TableCell className="font-medium">{m.item.name}</TableCell>
+                    <TableCell>
+                      <Badge variant={m.quantity >= 0 ? "success" : m.type === "PERDA" ? "danger" : "warning"}>
+                        {MOVEMENT_LABEL[m.type]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className={`text-right font-medium tabular ${m.quantity >= 0 ? "text-success" : "text-danger"}`}>
+                      {m.quantity > 0 ? "+" : ""}{m.quantity} {m.item.unit}
+                    </TableCell>
+                    <TableCell className="text-[13px] text-muted-foreground">{m.reason ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
     </>
   );
 }
+
+const MOVEMENT_LABEL: Record<string, string> = {
+  ENTRADA: "Entrada",
+  SAIDA: "Saída",
+  AJUSTE: "Ajuste",
+  PERDA: "Perda",
+};

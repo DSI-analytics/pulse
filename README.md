@@ -145,6 +145,7 @@ Cobrem a lógica crítica (pura, sem BD):
 
 - **Prevenção de duplo agendamento** e geração de vagas (`availability`)
 - **Cálculo de ocupação**, utilização, no-show, receita/hora (`occupancy`)
+- **Movimentos de stock** e custo médio ponderado (`stock`)
 - **Matriz de permissões** por perfil (`rbac`)
 - **Formatação/parse de MZN** (`money`)
 
@@ -167,7 +168,12 @@ npm run test
 - **Ocupação e capacidade médica**: cartões, métricas de utilização e **heatmap semanal**
 - Financeiro: receitas, despesas, resultado, margem, a receber/pagar, métodos de pagamento
 - Planos de saúde: faturado, recebido, por receber, prazos por seguradora
-- Stock com **alertas** (baixo, esgotado, a expirar, ritmo de consumo) + fornecedores + compras
+- **Serviços e Exames**: tabela de preços da clínica (análises, imagiologia, procedimentos);
+  ao marcar um exame é obrigatório indicar **qual**, e o preço vem do serviço
+- Stock com **alertas** (baixo, esgotado, a expirar, ritmo de consumo) e **movimentos**
+  (saída/consumo, entrada manual, ajuste de inventário, perda) com histórico
+- **Compras a fornecedores**: ao registar como recebida, dá **entrada automática no stock**,
+  recalcula o custo médio e lança a despesa em contas a pagar
 - Relatórios com **exportação CSV** e vista para impressão
 - Insights determinísticos (regras) + arquitetura pronta para assistente com IA
 - Autenticação, RBAC, isolamento de tenant, audit log, notificações

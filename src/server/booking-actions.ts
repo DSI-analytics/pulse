@@ -18,11 +18,12 @@ export interface BookingContext {
     consultationDuration: number;
   }[];
   plans: { id: string; name: string; insurer: string; contractPrice: number }[];
+  services: { id: string; name: string; category: string; basePrice: number }[];
 }
 
 export async function getBookingContext(): Promise<BookingContext> {
   const user = await requireUser();
-  const [specialties, doctors, plans] = await Promise.all([
+  const [specialties, doctors, plans, services] = await Promise.all([
     prisma.specialty.findMany({
       where: { clinicId: user.clinicId },
       orderBy: { name: "asc" },
@@ -44,11 +45,17 @@ export async function getBookingContext(): Promise<BookingContext> {
       orderBy: { name: "asc" },
       select: { id: true, name: true, contractPrice: true, insuranceCompany: { select: { name: true } } },
     }),
+    prisma.service.findMany({
+      where: { clinicId: user.clinicId, isActive: true, source: { in: ["EXAME", "PROCEDIMENTO", "OUTRO"] } },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, category: true, basePrice: true },
+    }),
   ]);
 
   return {
     specialties,
     doctors,
+    services,
     plans: plans.map((p) => ({
       id: p.id,
       name: p.name,
@@ -116,6 +123,7 @@ const createSchema = z.object({
   startAt: z.string().min(1), // ISO
   type: z.enum(["CONSULTA", "RETORNO", "EXAME", "PROCEDIMENTO"]).default("CONSULTA"),
   healthPlanId: z.string().optional().nullable(),
+  serviceId: z.string().optional().nullable(),
   isPrivate: z.boolean().default(false),
   reason: z.string().optional(),
 });
@@ -163,8 +171,22 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
     return { error: "Conflito de horário: o médico já tem uma marcação nesse período." };
   }
 
+  // An exam / procedure must say which one, and its price drives the quote.
+  let serviceId: string | null = null;
+  let servicePrice: number | null = null;
+  if (data.type === "EXAME" || data.type === "PROCEDIMENTO") {
+    if (!data.serviceId) return { error: "Indique qual o exame/procedimento a efectuar." };
+    const service = await prisma.service.findFirst({
+      where: { id: data.serviceId, clinicId: user.clinicId },
+      select: { id: true, basePrice: true },
+    });
+    if (!service) return { error: "Exame/serviço inválido." };
+    serviceId = service.id;
+    servicePrice = service.basePrice;
+  }
+
   let healthPlanId: string | null = null;
-  let priceQuoted = doctor.consultationPrice;
+  let priceQuoted = servicePrice ?? doctor.consultationPrice;
   if (!data.isPrivate && data.healthPlanId) {
     const plan = await prisma.healthPlan.findFirst({
       where: { id: data.healthPlanId, clinicId: user.clinicId },
@@ -183,6 +205,7 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
       doctorId: doctor.id,
       specialtyId: doctor.specialtyId,
       type: data.type,
+      serviceId,
       status: "MARCADA",
       startAt,
       endAt,

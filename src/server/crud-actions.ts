@@ -180,6 +180,35 @@ export async function createInventoryItemRecord(values: Values): Promise<Result>
   return { ok: true, id: item.id };
 }
 
+// ── Service / exam ───────────────────────────────────────────────────────
+export async function createServiceRecord(values: Values): Promise<Result> {
+  const g = await guard("service.manage");
+  if ("error" in g) return g;
+  const name = nonEmpty(values.name);
+  if (name.length < 2) return { error: "Indique o nome do serviço." };
+  const dup = await prisma.service.findFirst({ where: { clinicId: g.clinicId, name } });
+  if (dup) return { error: "Já existe um serviço com esse nome." };
+  const price = parseMZN(values.basePrice || "0");
+  if (price <= 0) return { error: "Indique um preço válido." };
+  const source = ["CONSULTA", "EXAME", "PROCEDIMENTO", "PRODUTO", "OUTRO"].includes(values.source)
+    ? (values.source as never)
+    : ("EXAME" as never);
+
+  const s = await prisma.service.create({
+    data: {
+      clinicId: g.clinicId,
+      name,
+      category: nonEmpty(values.category) || "Exame",
+      source,
+      basePrice: price,
+    },
+    select: { id: true },
+  });
+  await audit({ clinicId: g.clinicId, userId: g.userId, action: "service.create", entity: "Service", entityId: s.id });
+  revalidatePath("/servicos");
+  return { ok: true, id: s.id };
+}
+
 // ── Expense ──────────────────────────────────────────────────────────────
 export async function createExpenseRecord(values: Values): Promise<Result> {
   const g = await guard("finance.manage");

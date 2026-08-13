@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { dayRange, formatDatePt, formatTime } from "@/lib/datetime";
+import { dayRange, formatTime, clinicTodayIso, formatWeekdayDatePt } from "@/lib/datetime";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -28,7 +28,7 @@ export default async function AgendaPage({
 }) {
   const user = await requirePermission("appointment.view");
   const sp = await searchParams;
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = clinicTodayIso();
   const dateIso = sp.d ?? todayIso;
   const { start, end } = dayRange(new Date(dateIso + "T12:00:00Z"));
 
@@ -37,12 +37,20 @@ export default async function AgendaPage({
     orderBy: [{ startAt: "asc" }, { doctor: { name: "asc" } }],
     select: {
       id: true, startAt: true, status: true, type: true, priceQuoted: true,
+      service: { select: { name: true } },
       patient: { select: { name: true } },
       doctor: { select: { name: true } },
       specialty: { select: { name: true, color: true } },
       healthPlan: { select: { insuranceCompany: { select: { name: true } } } },
     },
   });
+
+  // "Hoje" / "Amanhã" / "Ontem" — relative to the day actually being viewed.
+  const relativeLabel =
+    dateIso === todayIso ? "Hoje"
+      : dateIso === addDays(todayIso, 1) ? "Amanhã"
+        : dateIso === addDays(todayIso, -1) ? "Ontem"
+          : null;
 
   const counts = {
     total: appts.filter((a) => a.status !== "CANCELADA").length,
@@ -57,21 +65,40 @@ export default async function AgendaPage({
       <PageHeader
         eyebrow="Operação"
         title="Agenda"
-        description={formatDatePt(new Date(dateIso + "T12:00:00Z"))}
+        description={formatWeekdayDatePt(new Date(dateIso + "T12:00:00Z"))}
         actions={<NovaMarcacao />}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
-          <Link href={`/agenda?d=${addDays(dateIso, -1)}`} className={buttonVariants({ variant: "secondary", size: "icon" })}>
+          <Link
+            href={`/agenda?d=${addDays(dateIso, -1)}`}
+            className={buttonVariants({ variant: "secondary", size: "icon" })}
+            aria-label="Dia anterior"
+          >
             <ChevronLeft className="size-4" />
           </Link>
-          <Link href={`/agenda?d=${todayIso}`} className={buttonVariants({ variant: "secondary", size: "sm" })}>
-            Hoje
-          </Link>
-          <Link href={`/agenda?d=${addDays(dateIso, 1)}`} className={buttonVariants({ variant: "secondary", size: "icon" })}>
+
+          {/* The label always names the day actually being viewed. */}
+          <div className="flex min-w-[13rem] items-center justify-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5">
+            <span className="text-sm font-semibold">{formatWeekdayDatePt(new Date(dateIso + "T12:00:00Z"))}</span>
+            {relativeLabel && <Badge variant="default">{relativeLabel}</Badge>}
+          </div>
+
+          <Link
+            href={`/agenda?d=${addDays(dateIso, 1)}`}
+            className={buttonVariants({ variant: "secondary", size: "icon" })}
+            aria-label="Dia seguinte"
+          >
             <ChevronRight className="size-4" />
           </Link>
+
+          {/* Only offered when you are not already on today. */}
+          {dateIso !== todayIso && (
+            <Link href="/agenda" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+              Ir para hoje
+            </Link>
+          )}
         </div>
         <div className="flex flex-wrap gap-2">
           <Chip label="Marcações" value={counts.total} />
@@ -118,7 +145,10 @@ export default async function AgendaPage({
                       {a.specialty.name}
                     </span>
                   </TableCell>
-                  <TableCell className="text-[13px] text-muted-foreground">{TYPE_LABEL[a.type]}</TableCell>
+                  <TableCell className="text-[13px] text-muted-foreground">
+                    {TYPE_LABEL[a.type]}
+                    {a.service && <span className="block text-[12px] text-subtle-foreground">{a.service.name}</span>}
+                  </TableCell>
                   <TableCell>
                     {a.healthPlan ? (
                       <Badge variant="info">{a.healthPlan.insuranceCompany.name}</Badge>

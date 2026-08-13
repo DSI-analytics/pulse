@@ -16,6 +16,8 @@ export const PERMISSIONS = {
   "doctor.stats": "Ver estatísticas de médicos",
   "healthplan.view": "Ver planos de saúde",
   "healthplan.manage": "Gerir planos de saúde",
+  "service.view": "Ver serviços e exames",
+  "service.manage": "Gerir serviços, exames e preços",
   "finance.view": "Ver financeiro",
   "finance.manage": "Gerir receitas, despesas e recebimentos",
   "inventory.view": "Ver stock",
@@ -43,6 +45,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "patient.manage",
     "doctor.view",
     "healthplan.view",
+    "service.view",
   ],
   DOCTOR: [
     "dashboard.view",
@@ -52,6 +55,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "consultation.viewClinical",
     "doctor.view",
     "doctor.stats",
+    "service.view",
   ],
   FINANCE: [
     "dashboard.view",
@@ -59,6 +63,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "finance.manage",
     "healthplan.view",
     "healthplan.manage",
+    "service.view",
+    "service.manage",
     "report.view",
     "patient.view",
     "doctor.view",

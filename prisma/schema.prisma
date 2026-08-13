@@ -470,6 +470,7 @@ model Service {
   isActive  Boolean       @default(true)
 
   invoiceItems InvoiceItem[]
+  appointments Appointment[]
 
   @@unique([clinicId, name])
   @@index([clinicId])
@@ -497,6 +498,9 @@ model Appointment {
   healthPlan          HealthPlan?        @relation(fields: [healthPlanId], references: [id])
   isPrivate           Boolean            @default(false)
   type                AppointmentType    @default(CONSULTA)
+  // Which exam / procedure is being performed (for type EXAME or PROCEDIMENTO).
+  serviceId           String?
+  service             Service?           @relation(fields: [serviceId], references: [id])
   status              AppointmentStatus  @default(MARCADA)
   startAt             DateTime
   endAt               DateTime

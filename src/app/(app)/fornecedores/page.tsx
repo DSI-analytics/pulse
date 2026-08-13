@@ -3,8 +3,9 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
+import { NovaCompra } from "@/components/nova-compra";
 import { createSupplierRecord } from "@/server/crud-actions";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatMZN } from "@/lib/money";
@@ -12,14 +13,26 @@ import { formatDateShort } from "@/lib/datetime";
 
 export default async function FornecedoresPage() {
   const user = await requirePermission("supplier.view");
-  const suppliers = await prisma.supplier.findMany({
-    where: { clinicId: user.clinicId },
-    orderBy: { name: "asc" },
-    include: {
-      purchases: { select: { total: true, orderedAt: true, paymentStatus: true } },
-      _count: { select: { inventoryItems: true } },
-    },
-  });
+  const [suppliers, purchases] = await Promise.all([
+    prisma.supplier.findMany({
+      where: { clinicId: user.clinicId },
+      orderBy: { name: "asc" },
+      include: {
+        purchases: { select: { total: true, orderedAt: true, paymentStatus: true } },
+        _count: { select: { inventoryItems: true } },
+      },
+    }),
+    prisma.purchase.findMany({
+      where: { clinicId: user.clinicId },
+      orderBy: { orderedAt: "desc" },
+      take: 10,
+      select: {
+        id: true, invoiceNumber: true, total: true, status: true, paymentStatus: true, orderedAt: true,
+        supplier: { select: { name: true } },
+        _count: { select: { items: true } },
+      },
+    }),
+  ]);
 
   const rows = suppliers.map((s) => {
     const totalPurchased = s.purchases.reduce((a, p) => a + p.total, 0);
@@ -36,7 +49,10 @@ export default async function FornecedoresPage() {
         description={`${suppliers.length} fornecedores`}
         actions={
           can(user.role, "supplier.manage") ? (
+            <>
+            <NovaCompra />
             <CadastroButton
+              variant="secondary"
               label="Novo fornecedor"
               title="Novo fornecedor"
               action={createSupplierRecord}
@@ -49,6 +65,7 @@ export default async function FornecedoresPage() {
                 { name: "paymentTerms", label: "Condições de pagamento", placeholder: "30 dias" },
               ]}
             />
+            </>
           ) : undefined
         }
       />
@@ -85,6 +102,52 @@ export default async function FornecedoresPage() {
               ))}
             </TableBody>
           </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle>Compras recentes</CardTitle></CardHeader>
+        <CardContent className="pt-0">
+          {purchases.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">
+              Ainda não há compras registadas. Use “Registar compra” para dar entrada de material no stock.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Data</TableHead>
+                  <TableHead>Fornecedor</TableHead>
+                  <TableHead>Factura</TableHead>
+                  <TableHead className="text-right">Artigos</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Pagamento</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {purchases.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell className="text-[13px] text-muted-foreground">{formatDateShort(p.orderedAt)}</TableCell>
+                    <TableCell className="font-medium">{p.supplier.name}</TableCell>
+                    <TableCell className="font-mono text-[12px] text-muted-foreground">{p.invoiceNumber ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular">{p._count.items}</TableCell>
+                    <TableCell>
+                      <Badge variant={p.status === "RECEBIDA" ? "success" : p.status === "CANCELADA" ? "neutral" : "warning"}>
+                        {p.status === "RECEBIDA" ? "Recebida" : p.status === "ENCOMENDADA" ? "Encomendada" : p.status === "PARCIAL" ? "Parcial" : "Cancelada"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={p.paymentStatus === "PAGO" ? "success" : "warning"}>
+                        {p.paymentStatus === "PAGO" ? "Pago" : p.paymentStatus === "PARCIAL" ? "Parcial" : "Pendente"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular">{formatMZN(p.total)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </>

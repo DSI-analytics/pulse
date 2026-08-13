@@ -80,6 +80,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
   const [date, setDate] = React.useState(todayLocal());
   const [time, setTime] = React.useState("09:00");
   const [type, setType] = React.useState("CONSULTA");
+  const [serviceId, setServiceId] = React.useState("");
   const [coverage, setCoverage] = React.useState("PARTICULAR"); // PARTICULAR or planId
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -104,7 +105,14 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
   );
   const doctor = doctors.find((d) => d.id === doctorId);
   const plan = ctx?.plans.find((p) => p.id === coverage);
-  const price = plan ? plan.contractPrice : doctor?.consultationPrice ?? 0;
+  // Exams and procedures need an explicit service, and it sets the price.
+  const needsService = type === "EXAME" || type === "PROCEDIMENTO";
+  const service = ctx?.services.find((s) => s.id === serviceId);
+  const price = plan
+    ? plan.contractPrice
+    : needsService
+      ? service?.basePrice ?? 0
+      : doctor?.consultationPrice ?? 0;
 
   async function handleQuickCreate() {
     const res = await quickCreatePatient({ name: newName, phone: newPhone });
@@ -125,6 +133,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
     if (!patient) return setError("Selecione ou registe um paciente.");
     if (!doctorId) return setError("Selecione o médico.");
     if (!date || !time) return setError("Escolha data e hora.");
+    if (needsService && !serviceId) return setError("Indique qual o exame/procedimento a efectuar.");
 
     const startAt = `${date}T${time}:00+02:00`; // Africa/Maputo
     if (new Date(startAt).getTime() < Date.now() - 2 * 60_000) {
@@ -139,6 +148,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
       type: type as "CONSULTA",
       isPrivate: coverage === "PARTICULAR",
       healthPlanId: coverage === "PARTICULAR" ? null : coverage,
+      serviceId: needsService ? serviceId : null,
     });
     setSaving(false);
     if ("error" in res && res.error) return setError(res.error);
@@ -279,7 +289,14 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
           </div>
           <div>
             <Label>Tipo</Label>
-            <Select className="mt-1.5" value={type} onChange={(e) => setType(e.target.value)}>
+            <Select
+              className="mt-1.5"
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value);
+                setServiceId("");
+              }}
+            >
               <option value="CONSULTA">Consulta</option>
               <option value="RETORNO">Retorno</option>
               <option value="EXAME">Exame</option>
@@ -287,6 +304,26 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
             </Select>
           </div>
         </div>
+
+        {/* Which exam / procedure */}
+        {needsService && (
+          <div>
+            <Label>{type === "EXAME" ? "Exame a efectuar" : "Procedimento a efectuar"}</Label>
+            <Select className="mt-1.5" value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
+              <option value="">Selecionar…</option>
+              {ctx?.services.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.category} · {s.name} — {formatMZN(s.basePrice)}
+                </option>
+              ))}
+            </Select>
+            {ctx && ctx.services.length === 0 && (
+              <p className="mt-1.5 text-xs text-muted-foreground">
+                Ainda não há exames cadastrados. Adicione-os em Serviços.
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Coverage */}
         <div>

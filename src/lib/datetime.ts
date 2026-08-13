@@ -35,6 +35,17 @@ export function monthLabel(date: Date | string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
+/** Today's date in the clinic timezone, as yyyy-MM-dd (never the UTC day). */
+export function clinicTodayIso(): string {
+  return formatInTimeZone(new Date(), CLINIC_TZ, "yyyy-MM-dd");
+}
+
+/** "Quinta-feira, 14 Ago 2026" */
+export function formatWeekdayDatePt(date: Date | string): string {
+  const s = formatInTimeZone(new Date(date), CLINIC_TZ, "EEEE, dd MMM yyyy", { locale: pt });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
 /** Clinic-local "now". */
 export function clinicNow(): Date {
   return toZonedTime(new Date(), CLINIC_TZ);

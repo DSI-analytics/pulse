@@ -53,6 +53,7 @@ async function main() {
     prisma.doctorHealthPlan.deleteMany(),
     prisma.doctorAvailabilityException.deleteMany(),
     prisma.doctorSchedule.deleteMany(),
+    prisma.service.deleteMany(),
     prisma.patient.deleteMany(),
     prisma.doctor.deleteMany(),
     prisma.healthPlan.deleteMany(),
@@ -142,6 +143,35 @@ async function main() {
       plans.push({ id: plan.id, contractPrice: MZN(p.price), copay: MZN(p.copay) });
     }
   }
+
+  // ── Services & exams (price list used by marcações) ─────────────────────
+  console.log("› Serviços e exames…");
+  const serviceDefs = [
+    { n: "Consulta de Medicina Geral", c: "Consultas", s: "CONSULTA", p: 1500 },
+    { n: "Consulta de especialidade", c: "Consultas", s: "CONSULTA", p: 2500 },
+    { n: "Hemograma completo", c: "Análises clínicas", s: "EXAME", p: 1200 },
+    { n: "Glicemia em jejum", c: "Análises clínicas", s: "EXAME", p: 450 },
+    { n: "Teste rápido de malária", c: "Análises clínicas", s: "EXAME", p: 350 },
+    { n: "Análise de urina II", c: "Análises clínicas", s: "EXAME", p: 600 },
+    { n: "Perfil lipídico", c: "Análises clínicas", s: "EXAME", p: 1800 },
+    { n: "Raio-X do tórax", c: "Imagiologia", s: "EXAME", p: 2200 },
+    { n: "Ecografia abdominal", c: "Imagiologia", s: "EXAME", p: 3000 },
+    { n: "Ecografia obstétrica", c: "Imagiologia", s: "EXAME", p: 3200 },
+    { n: "Electrocardiograma (ECG)", c: "Cardiologia", s: "EXAME", p: 2000 },
+    { n: "Teste de esforço", c: "Cardiologia", s: "EXAME", p: 4500 },
+    { n: "Papanicolau", c: "Ginecologia", s: "EXAME", p: 1600 },
+    { n: "Sutura simples", c: "Pequena cirurgia", s: "PROCEDIMENTO", p: 2500 },
+    { n: "Penso e curativo", c: "Enfermagem", s: "PROCEDIMENTO", p: 500 },
+    { n: "Administração de injectável", c: "Enfermagem", s: "PROCEDIMENTO", p: 350 },
+    { n: "Nebulização", c: "Enfermagem", s: "PROCEDIMENTO", p: 700 },
+    { n: "Destartarização dentária", c: "Dentária", s: "PROCEDIMENTO", p: 3500 },
+    { n: "Extracção dentária simples", c: "Dentária", s: "PROCEDIMENTO", p: 2800 },
+  ];
+  await prisma.service.createMany({
+    data: serviceDefs.map((s) => ({
+      clinicId, name: s.n, category: s.c, source: s.s as any, basePrice: MZN(s.p),
+    })),
+  });
 
   // ── Doctors ────────────────────────────────────────────────────────────
   console.log("› Médicos, horários e planos aceites…");
