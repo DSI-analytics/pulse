@@ -1,0 +1,23 @@
+# PostgreSQL for Pulso (production-shaped local/prod database).
+# Local dev without Docker can instead use `npm run db:dev` (userland Postgres).
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: pulso-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pulso
+      POSTGRES_PASSWORD: pulso
+      POSTGRES_DB: pulso
+    ports:
+      - "5432:5432"
+    volumes:
+      - pulso_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pulso -d pulso"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pulso_pgdata:

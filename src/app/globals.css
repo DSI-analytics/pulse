@@ -1,26 +1,155 @@
 @import "tailwindcss";
 
+/*
+  Pulso design system — restrained, premium SaaS.
+  Neutral cool-grey canvas, single teal accent, semantic status colours.
+*/
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f6f8f8;
+  --surface: #ffffff;
+  --surface-2: #f0f4f3;
+  --foreground: #10201c;
+  --muted: #f0f4f3;
+  --muted-foreground: #5c716b;
+  --subtle-foreground: #859891;
+  --card: #ffffff;
+  --card-foreground: #10201c;
+  --border: #e3eae7;
+  --border-strong: #d3ddd9;
+  --input: #e3eae7;
+  --ring: #0c7c74;
+
+  --primary: #0c7c74;
+  --primary-foreground: #ffffff;
+  --primary-muted: #e0efec;
+
+  --accent: #0c7c74;
+  --accent-foreground: #ffffff;
+
+  --success: #1f9d57;
+  --success-muted: #e2f2e8;
+  --warning: #b26a06;
+  --warning-muted: #f6ecd8;
+  --danger: #cb4133;
+  --danger-muted: #f8e2df;
+  --info: #2563a8;
+  --info-muted: #e2ecf7;
+
+  --radius: 0.7rem;
+}
+
+.dark {
+  --background: #0a1210;
+  --surface: #101d19;
+  --surface-2: #16261f;
+  --foreground: #e9f1ee;
+  --muted: #16261f;
+  --muted-foreground: #96aaa3;
+  --subtle-foreground: #6c817b;
+  --card: #101d19;
+  --card-foreground: #e9f1ee;
+  --border: #20332c;
+  --border-strong: #2b4139;
+  --input: #20332c;
+  --ring: #2fb6a0;
+
+  --primary: #2fb6a0;
+  --primary-foreground: #05201b;
+  --primary-muted: #133330;
+
+  --accent: #2fb6a0;
+  --accent-foreground: #05201b;
+
+  --success: #43bd74;
+  --success-muted: #123123;
+  --warning: #d99a34;
+  --warning-muted: #322611;
+  --danger: #e0685b;
+  --danger-muted: #351d1a;
+  --info: #5b9bd8;
+  --info-muted: #12263a;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-muted: var(--primary-muted);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-success: var(--success);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-muted: var(--warning-muted);
+  --color-danger: var(--danger);
+  --color-danger-muted: var(--danger-muted);
+  --color-info: var(--info);
+  --color-info-muted: var(--info-muted);
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 0.2rem);
+  --radius-sm: calc(var(--radius) - 0.35rem);
+
+  --font-sans: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-display: -apple-system, "SF Pro Display", system-ui, "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "Menlo", monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
+}
+
+html {
+  color-scheme: light dark;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.011em;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus ring */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-in {
+    animation: fadeIn 0.24s ease both;
+  }
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }

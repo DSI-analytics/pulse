@@ -1,0 +1,842 @@
+// Pulso — Clinic Management & Operations Intelligence Platform
+// Multi-tenant (clinic-scoped) relational schema for PostgreSQL.
+//
+// Design rules:
+//  - Every tenant-owned record carries `clinicId` and is indexed on it.
+//  - Human-facing codes are unique *within* a clinic: @@unique([clinicId, code]).
+//  - Money is stored as integers in *cents* (MZN centavos) to avoid float drift.
+//  - Enums encode domain state; Portuguese labels live in the UI layer.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  CLINIC_ADMIN
+  RECEPTIONIST
+  DOCTOR
+  FINANCE
+  INVENTORY_MANAGER
+}
+
+enum Gender {
+  MASCULINO
+  FEMININO
+  OUTRO
+}
+
+enum DoctorStatus {
+  ACTIVO
+  INACTIVO
+  LICENCA
+}
+
+enum AppointmentStatus {
+  MARCADA
+  CONFIRMADA
+  CHEGOU
+  EM_ESPERA
+  EM_CONSULTA
+  CONCLUIDA
+  CANCELADA
+  NAO_COMPARECEU
+}
+
+enum AppointmentType {
+  CONSULTA
+  RETORNO
+  EXAME
+  PROCEDIMENTO
+}
+
+enum AvailabilityExceptionType {
+  FOLGA // day off / holiday
+  FERIAS // vacation
+  HORARIO_ESPECIAL // special hours
+  BLOQUEIO // ad-hoc block
+}
+
+enum PaymentMethod {
+  DINHEIRO
+  MPESA
+  EMOLA
+  CARTAO
+  TRANSFERENCIA
+  SEGURADORA
+}
+
+enum PaymentStatus {
+  PENDENTE
+  PARCIAL
+  PAGO
+  ANULADO
+}
+
+enum InvoiceStatus {
+  RASCUNHO
+  EMITIDA
+  PARCIAL
+  PAGA
+  ANULADA
+}
+
+enum RevenueSource {
+  CONSULTA
+  PROCEDIMENTO
+  EXAME
+  PRODUTO
+  SEGURADORA
+  PRIVADO
+  OUTRO
+}
+
+enum ExpenseStatus {
+  PENDENTE
+  PAGA
+  ANULADA
+}
+
+enum PurchaseStatus {
+  ENCOMENDADA
+  RECEBIDA
+  PARCIAL
+  CANCELADA
+}
+
+enum PaymentTermsStatus {
+  PENDENTE
+  PARCIAL
+  PAGO
+}
+
+enum InventoryMovementType {
+  ENTRADA
+  SAIDA
+  AJUSTE
+  PERDA
+}
+
+enum NotificationType {
+  MARCACAO
+  CONFLITO_AGENDA
+  CANCELAMENTO
+  STOCK_BAIXO
+  STOCK_EXPIRA
+  CONTA_RECEBER
+  PAGAMENTO_SEGURADORA
+  CAPACIDADE_MEDICO
+  SISTEMA
+}
+
+enum NotificationSeverity {
+  INFO
+  AVISO
+  CRITICO
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tenancy & identity
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Clinic {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  nuit      String? // Número Único de Identificação Tributária (MZ tax id)
+  phone     String?
+  email     String?
+  address   String?
+  city      String   @default("Maputo")
+  country   String   @default("Moçambique")
+  currency  String   @default("MZN")
+  locale    String   @default("pt")
+  timezone  String   @default("Africa/Maputo")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  branches            Branch[]
+  users               User[]
+  roles               Role[]
+  patients            Patient[]
+  doctors             Doctor[]
+  specialties         Specialty[]
+  appointments        Appointment[]
+  consultations       Consultation[]
+  insuranceCompanies  HealthInsuranceCompany[]
+  healthPlans         HealthPlan[]
+  patientHealthPlans  PatientHealthPlan[]
+  services            Service[]
+  invoices            Invoice[]
+  payments            Payment[]
+  revenues            Revenue[]
+  expenses            Expense[]
+  expenseCategories   ExpenseCategory[]
+  suppliers           Supplier[]
+  inventoryItems      InventoryItem[]
+  inventoryCategories InventoryCategory[]
+  inventoryMovements  InventoryMovement[]
+  purchases           Purchase[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  settings            ClinicSettings?
+}
+
+model Branch {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name      String
+  address   String?
+  phone     String?
+  isMain    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  doctors      Doctor[]
+  appointments Appointment[]
+
+  @@index([clinicId])
+}
+
+model ClinicSettings {
+  id                     String   @id @default(cuid())
+  clinicId               String   @unique
+  clinic                 Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  defaultSlotMinutes     Int      @default(30)
+  defaultConsultationFee Int      @default(150000) // in centavos -> 1.500,00 MZN
+  lowStockLeadDays       Int      @default(10)
+  expiryWarningDays      Int      @default(30)
+  receivableOverdueDays  Int      @default(30)
+  updatedAt              DateTime @updatedAt
+}
+
+model User {
+  id           String    @id @default(cuid())
+  clinicId     String
+  clinic       Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name         String
+  email        String
+  passwordHash String
+  role         UserRole
+  // Optional custom role (extensibility path for tenant-defined roles).
+  customRoleId String?
+  customRole   Role?     @relation(fields: [customRoleId], references: [id])
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  doctor              Doctor?
+  auditLogs           AuditLog[]
+  createdAppointments Appointment[] @relation("AppointmentCreatedBy")
+
+  @@unique([clinicId, email])
+  @@index([clinicId])
+}
+
+// Custom roles + permission catalog (architecture for future tenant-defined roles).
+// The runtime permission matrix for built-in roles lives in src/lib/rbac.ts.
+model Role {
+  id          String   @id @default(cuid())
+  clinicId    String?
+  clinic      Clinic?  @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  key         String
+  name        String
+  description String?
+  permissions String[] // permission keys, see Permission
+  isSystem    Boolean  @default(false)
+  users       User[]
+
+  @@unique([clinicId, key])
+  @@index([clinicId])
+}
+
+model Permission {
+  key         String @id
+  description String
+  category    String
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Catalog: specialties, doctors, schedules
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Specialty {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name      String
+  color     String   @default("#0C7C74")
+  createdAt DateTime @default(now())
+
+  doctors      Doctor[]
+  appointments Appointment[]
+  revenues     Revenue[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+model Doctor {
+  id                   String       @id @default(cuid())
+  clinicId             String
+  clinic               Clinic       @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  branchId             String?
+  branch               Branch?      @relation(fields: [branchId], references: [id])
+  userId               String?      @unique
+  user                 User?        @relation(fields: [userId], references: [id])
+  specialtyId          String
+  specialty            Specialty    @relation(fields: [specialtyId], references: [id])
+  name                 String
+  photoUrl             String?
+  phone                String?
+  email                String?
+  licenseNumber        String? // Ordem dos Médicos registration
+  consultationPrice    Int          @default(150000) // centavos
+  consultationDuration Int          @default(30) // minutes
+  status               DoctorStatus @default(ACTIVO)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  schedules              DoctorSchedule[]
+  availabilityExceptions DoctorAvailabilityException[]
+  appointments           Appointment[]
+  consultations          Consultation[]
+  acceptedPlans          DoctorHealthPlan[]
+  revenues               Revenue[]
+
+  @@index([clinicId])
+  @@index([clinicId, specialtyId])
+}
+
+// Weekly recurring working hours. One row per weekday the doctor works.
+model DoctorSchedule {
+  id          String  @id @default(cuid())
+  doctorId    String
+  doctor      Doctor  @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  weekday     Int // 0=Sunday … 6=Saturday
+  startTime   String // "08:00"
+  endTime     String // "16:00"
+  breakStart  String? // "12:30"
+  breakEnd    String? // "13:30"
+  slotMinutes Int     @default(30)
+
+  @@unique([doctorId, weekday])
+  @@index([doctorId])
+}
+
+// Date-specific overrides: holidays, time off, special hours.
+model DoctorAvailabilityException {
+  id        String                    @id @default(cuid())
+  doctorId  String
+  doctor    Doctor                    @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  date      DateTime                  @db.Date
+  type      AvailabilityExceptionType
+  startTime String?
+  endTime   String?
+  reason    String?
+
+  @@index([doctorId, date])
+}
+
+// Which plans a doctor accepts.
+model DoctorHealthPlan {
+  doctorId     String
+  doctor       Doctor     @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  healthPlanId String
+  healthPlan   HealthPlan @relation(fields: [healthPlanId], references: [id], onDelete: Cascade)
+
+  @@id([doctorId, healthPlanId])
+  @@index([healthPlanId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Patients
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Patient {
+  id                    String    @id @default(cuid())
+  clinicId              String
+  clinic                Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  code                  String // human patient id, e.g. "PAC-01042"
+  name                  String
+  birthDate             DateTime? @db.Date
+  gender                Gender?
+  phone                 String?
+  email                 String?
+  address               String?
+  emergencyContactName  String?
+  emergencyContactPhone String?
+  notes                 String?
+  registeredAt          DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  healthPlans   PatientHealthPlan[]
+  appointments  Appointment[]
+  consultations Consultation[]
+  invoices      Invoice[]
+  payments      Payment[]
+  revenues      Revenue[]
+
+  @@unique([clinicId, code])
+  @@index([clinicId])
+  @@index([clinicId, name])
+  @@index([clinicId, phone])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Health insurance / plans
+// ─────────────────────────────────────────────────────────────────────────────
+
+model HealthInsuranceCompany {
+  id              String   @id @default(cuid())
+  clinicId        String
+  clinic          Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name            String
+  contactName     String?
+  phone           String?
+  email           String?
+  paymentTermDays Int      @default(30)
+  createdAt       DateTime @default(now())
+
+  plans HealthPlan[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+model HealthPlan {
+  id                 String                 @id @default(cuid())
+  clinicId           String
+  clinic             Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  insuranceCompanyId String
+  insuranceCompany   HealthInsuranceCompany @relation(fields: [insuranceCompanyId], references: [id], onDelete: Cascade)
+  name               String
+  contractPrice      Int                    @default(120000) // clinic-negotiated price per consultation, centavos
+  patientCopay       Int                    @default(0) // centavos paid by patient
+  coverageNotes      String?
+  isActive           Boolean                @default(true)
+  createdAt          DateTime               @default(now())
+
+  patientLinks PatientHealthPlan[]
+  appointments Appointment[]
+  invoices     Invoice[]
+  doctors      DoctorHealthPlan[]
+  revenues     Revenue[]
+
+  @@unique([clinicId, insuranceCompanyId, name])
+  @@index([clinicId])
+}
+
+model PatientHealthPlan {
+  id               String     @id @default(cuid())
+  clinicId         String
+  clinic           Clinic     @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId        String
+  patient          Patient    @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  healthPlanId     String
+  healthPlan       HealthPlan @relation(fields: [healthPlanId], references: [id], onDelete: Cascade)
+  membershipNumber String?
+  validUntil       DateTime?  @db.Date
+  isPrimary        Boolean    @default(true)
+
+  appointments Appointment[]
+
+  @@index([clinicId])
+  @@index([patientId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Services (price list)
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Service {
+  id        String        @id @default(cuid())
+  clinicId  String
+  clinic    Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name      String
+  category  String        @default("Consulta")
+  source    RevenueSource @default(CONSULTA)
+  basePrice Int           @default(150000) // centavos
+  isActive  Boolean       @default(true)
+
+  invoiceItems InvoiceItem[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Appointments & consultations
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Appointment {
+  id                  String             @id @default(cuid())
+  clinicId            String
+  clinic              Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  branchId            String?
+  branch              Branch?            @relation(fields: [branchId], references: [id])
+  patientId           String
+  patient             Patient            @relation(fields: [patientId], references: [id])
+  doctorId            String
+  doctor              Doctor             @relation(fields: [doctorId], references: [id])
+  specialtyId         String
+  specialty           Specialty          @relation(fields: [specialtyId], references: [id])
+  patientHealthPlanId String?
+  patientHealthPlan   PatientHealthPlan? @relation(fields: [patientHealthPlanId], references: [id])
+  healthPlanId        String?
+  healthPlan          HealthPlan?        @relation(fields: [healthPlanId], references: [id])
+  isPrivate           Boolean            @default(false)
+  type                AppointmentType    @default(CONSULTA)
+  status              AppointmentStatus  @default(MARCADA)
+  startAt             DateTime
+  endAt               DateTime
+  priceQuoted         Int                @default(0) // centavos
+  reason              String?
+  notes               String?
+  checkedInAt         DateTime?
+  cancelReason        String?
+  createdById         String?
+  createdBy           User?              @relation("AppointmentCreatedBy", fields: [createdById], references: [id])
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  consultation Consultation?
+  invoice      Invoice?
+  revenue      Revenue?
+
+  @@index([clinicId])
+  @@index([clinicId, startAt])
+  @@index([doctorId, startAt])
+  @@index([patientId])
+  @@index([clinicId, status])
+}
+
+model Consultation {
+  id            String      @id @default(cuid())
+  clinicId      String
+  clinic        Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  appointmentId String      @unique
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient     @relation(fields: [patientId], references: [id])
+  doctorId      String
+  doctor        Doctor      @relation(fields: [doctorId], references: [id])
+  startedAt     DateTime
+  endedAt       DateTime?
+  subjective    String? // complaint / history
+  notes         String? // clinical notes
+  diagnosis     String?
+  prescription  String?
+  followUpDate  DateTime?   @db.Date
+  createdAt     DateTime    @default(now())
+
+  @@index([clinicId])
+  @@index([patientId])
+  @@index([doctorId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Billing: invoices, items, payments, revenue
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Invoice {
+  id            String        @id @default(cuid())
+  clinicId      String
+  clinic        Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  number        String // "FAC-2026-000123"
+  patientId     String
+  patient       Patient       @relation(fields: [patientId], references: [id])
+  appointmentId String?       @unique
+  appointment   Appointment?  @relation(fields: [appointmentId], references: [id])
+  healthPlanId  String?
+  healthPlan    HealthPlan?   @relation(fields: [healthPlanId], references: [id])
+  status        InvoiceStatus @default(EMITIDA)
+  subtotal      Int           @default(0)
+  patientDue    Int           @default(0) // centavos owed by patient
+  insurerDue    Int           @default(0) // centavos owed by insurer
+  total         Int           @default(0)
+  amountPaid    Int           @default(0)
+  issuedAt      DateTime      @default(now())
+  dueAt         DateTime?
+  createdAt     DateTime      @default(now())
+
+  items    InvoiceItem[]
+  payments Payment[]
+
+  @@unique([clinicId, number])
+  @@index([clinicId])
+  @@index([clinicId, status])
+  @@index([patientId])
+}
+
+model InvoiceItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  serviceId   String?
+  service     Service? @relation(fields: [serviceId], references: [id])
+  description String
+  quantity    Int      @default(1)
+  unitPrice   Int // centavos
+  total       Int // centavos
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id          String        @id @default(cuid())
+  clinicId    String
+  clinic      Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  invoiceId   String?
+  invoice     Invoice?      @relation(fields: [invoiceId], references: [id])
+  patientId   String?
+  patient     Patient?      @relation(fields: [patientId], references: [id])
+  amount      Int // centavos
+  method      PaymentMethod
+  reference   String? // M-Pesa/e-Mola tx id, etc.
+  fromInsurer Boolean       @default(false)
+  receivedAt  DateTime      @default(now())
+  createdAt   DateTime      @default(now())
+
+  @@index([clinicId])
+  @@index([clinicId, receivedAt])
+  @@index([invoiceId])
+}
+
+model Revenue {
+  id            String         @id @default(cuid())
+  clinicId      String
+  clinic        Clinic         @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  source        RevenueSource  @default(CONSULTA)
+  description   String
+  amount        Int // centavos
+  patientId     String?
+  patient       Patient?       @relation(fields: [patientId], references: [id])
+  doctorId      String?
+  doctor        Doctor?        @relation(fields: [doctorId], references: [id])
+  specialtyId   String?
+  specialty     Specialty?     @relation(fields: [specialtyId], references: [id])
+  healthPlanId  String?
+  healthPlan    HealthPlan?    @relation(fields: [healthPlanId], references: [id])
+  appointmentId String?        @unique
+  appointment   Appointment?   @relation(fields: [appointmentId], references: [id])
+  method        PaymentMethod?
+  status        PaymentStatus  @default(PAGO)
+  recognisedAt  DateTime       @default(now())
+  createdAt     DateTime       @default(now())
+
+  @@index([clinicId])
+  @@index([clinicId, recognisedAt])
+  @@index([doctorId])
+  @@index([specialtyId])
+  @@index([healthPlanId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Expenses
+// ─────────────────────────────────────────────────────────────────────────────
+
+model ExpenseCategory {
+  id        String    @id @default(cuid())
+  clinicId  String
+  clinic    Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime  @default(now())
+  expenses  Expense[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+model Expense {
+  id          String           @id @default(cuid())
+  clinicId    String
+  clinic      Clinic           @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  categoryId  String?
+  category    ExpenseCategory? @relation(fields: [categoryId], references: [id])
+  description String
+  amount      Int // centavos
+  method      PaymentMethod?
+  status      ExpenseStatus    @default(PAGA)
+  supplierId  String?
+  supplier    Supplier?        @relation(fields: [supplierId], references: [id])
+  purchaseId  String?          @unique
+  purchase    Purchase?        @relation(fields: [purchaseId], references: [id])
+  incurredAt  DateTime         @default(now())
+  dueAt       DateTime?
+  createdAt   DateTime         @default(now())
+
+  @@index([clinicId])
+  @@index([clinicId, incurredAt])
+  @@index([categoryId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Suppliers, inventory, purchases
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Supplier {
+  id              String   @id @default(cuid())
+  clinicId        String
+  clinic          Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name            String
+  category        String?
+  contactName     String?
+  phone           String?
+  email           String?
+  address         String?
+  paymentTerms    String? // e.g. "30 dias"
+  avgLeadTimeDays Int?
+  createdAt       DateTime @default(now())
+
+  inventoryItems InventoryItem[]
+  purchases      Purchase[]
+  expenses       Expense[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+model InventoryCategory {
+  id       String          @id @default(cuid())
+  clinicId String
+  clinic   Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name     String
+  items    InventoryItem[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId])
+}
+
+model InventoryItem {
+  id                  String             @id @default(cuid())
+  clinicId            String
+  clinic              Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  categoryId          String?
+  category            InventoryCategory? @relation(fields: [categoryId], references: [id])
+  supplierId          String?
+  supplier            Supplier?          @relation(fields: [supplierId], references: [id])
+  name                String
+  sku                 String
+  unit                String             @default("un") // un, caixa, par, ml…
+  currentStock        Int                @default(0)
+  minStock            Int                @default(0)
+  purchasePrice       Int                @default(0) // last purchase unit price, centavos
+  avgCost             Int                @default(0) // moving average, centavos
+  batchNumber         String?
+  expiryDate          DateTime?          @db.Date
+  lastPurchaseAt      DateTime?
+  avgDailyConsumption Float              @default(0)
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+
+  movements     InventoryMovement[]
+  purchaseItems PurchaseItem[]
+
+  @@unique([clinicId, sku])
+  @@index([clinicId])
+  @@index([clinicId, categoryId])
+}
+
+model InventoryMovement {
+  id         String                @id @default(cuid())
+  clinicId   String
+  clinic     Clinic                @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       InventoryItem         @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type       InventoryMovementType
+  quantity   Int // positive for ENTRADA, negative for SAIDA (normalised in service layer)
+  unitCost   Int? // centavos
+  reason     String?
+  purchaseId String?
+  purchase   Purchase?             @relation(fields: [purchaseId], references: [id])
+  createdAt  DateTime              @default(now())
+
+  @@index([clinicId])
+  @@index([itemId, createdAt])
+}
+
+model Purchase {
+  id            String             @id @default(cuid())
+  clinicId      String
+  clinic        Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  supplierId    String
+  supplier      Supplier           @relation(fields: [supplierId], references: [id])
+  invoiceNumber String?
+  status        PurchaseStatus     @default(ENCOMENDADA)
+  paymentStatus PaymentTermsStatus @default(PENDENTE)
+  total         Int                @default(0) // centavos
+  notes         String?
+  orderedAt     DateTime           @default(now())
+  receivedAt    DateTime?
+  dueAt         DateTime?
+  createdAt     DateTime           @default(now())
+
+  items     PurchaseItem[]
+  movements InventoryMovement[]
+  expense   Expense?
+
+  @@index([clinicId])
+  @@index([clinicId, orderedAt])
+  @@index([supplierId])
+}
+
+model PurchaseItem {
+  id         String        @id @default(cuid())
+  purchaseId String
+  purchase   Purchase      @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  itemId     String
+  item       InventoryItem @relation(fields: [itemId], references: [id])
+  quantity   Int
+  unitCost   Int // centavos
+  total      Int // centavos
+
+  @@index([purchaseId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notifications & audit
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String               @id @default(cuid())
+  clinicId  String
+  clinic    Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  severity  NotificationSeverity @default(INFO)
+  title     String
+  body      String?
+  entity    String? // "Appointment", "InventoryItem"…
+  entityId  String?
+  isRead    Boolean              @default(false)
+  createdAt DateTime             @default(now())
+
+  @@index([clinicId, isRead])
+  @@index([clinicId, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String // "patient.create", "appointment.cancel"…
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([clinicId, createdAt])
+  @@index([entity, entityId])
+}
