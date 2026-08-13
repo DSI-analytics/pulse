@@ -19,5 +19,24 @@ services:
       timeout: 5s
       retries: 10
 
+  # The application itself. Start everything with:  docker compose up -d
+  # (omit this service if you only want the database for local development).
+  app:
+    build: .
+    container_name: pulso-app
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://pulso:pulso@db:5432/pulso?schema=public
+      # Generate with: openssl rand -base64 48
+      AUTH_SECRET: ${AUTH_SECRET:?defina AUTH_SECRET no .env}
+      APP_TZ: Africa/Maputo
+      APP_CURRENCY: MZN
+      APP_LOCALE: pt
+    ports:
+      - "3000:3000"
+
 volumes:
   pulso_pgdata:

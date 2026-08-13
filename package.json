@@ -14,7 +14,9 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
-    "test": "vitest run"
+    "db:deploy": "prisma migrate deploy",
+    "test": "vitest run",
+    "postinstall": "prisma generate"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

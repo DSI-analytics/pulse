@@ -106,6 +106,51 @@ npm run db:migrate && npm run db:seed && npm run dev
 
 ---
 
+## Hospedar em produção
+
+A app gera um bundle **standalone** (`output: "standalone"`), por isso corre em
+qualquer sítio com Node 20+ ou Docker.
+
+### Opção A — Docker (VPS, DigitalOcean, Hetzner, servidor próprio)
+
+```bash
+# 1. Definir o segredo de sessão
+echo "AUTH_SECRET=$(openssl rand -base64 48)" >> .env
+
+# 2. Subir base de dados + aplicação
+docker compose up -d --build
+
+# 3. Aplicar as migrações na base de dados de produção
+docker compose exec app npx prisma migrate deploy
+```
+
+A app fica em `http://SEU_IP:3000` — coloque um **Nginx/Caddy com HTTPS** à frente
+(obrigatório: as sessões usam cookies `secure` em produção).
+
+### Opção B — Plataforma gerida (Vercel, Railway, Render)
+
+1. Ligue o repositório Git.
+2. Crie uma base de dados **PostgreSQL** gerida (Neon, Supabase, Railway…).
+3. Defina as variáveis de ambiente: `DATABASE_URL`, `AUTH_SECRET`, `APP_TZ=Africa/Maputo`.
+4. Comando de build: `npm run build` · Comando de migração: `npm run db:deploy`.
+
+### Checklist antes de pôr no ar (importante)
+
+- [ ] **`AUTH_SECRET` novo e aleatório** (`openssl rand -base64 48`) — nunca o do exemplo.
+- [ ] `DATABASE_URL` a apontar para um PostgreSQL **gerido com backups automáticos**.
+- [ ] **HTTPS obrigatório** (os cookies de sessão são `secure` fora de desenvolvimento).
+- [ ] **Não correr `npm run db:seed` em produção** — apaga tudo e cria dados fictícios.
+      Em produção use apenas `npm run db:deploy`.
+- [ ] **Apagar/alterar as contas de demonstração** e a palavra-passe `pulso123`.
+- [ ] Definir a política de retenção e backup dos dados clínicos (dados de saúde
+      são sensíveis; confirme os requisitos legais aplicáveis em Moçambique).
+- [ ] Rever quem tem perfil de Administrador.
+
+> **Nota:** o `npm run db:dev` (PostgreSQL userland) destina-se **apenas a
+> desenvolvimento local** — não o use para alojar.
+
+---
+
 ## Credenciais de demonstração
 
 Palavra-passe para todas: **`pulso123`**
