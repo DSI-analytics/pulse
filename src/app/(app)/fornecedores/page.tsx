@@ -1,6 +1,9 @@
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
+import { CadastroButton } from "@/components/cadastro-form";
+import { createSupplierRecord } from "@/server/crud-actions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +30,28 @@ export default async function FornecedoresPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Gestão" title="Fornecedores" description={`${suppliers.length} fornecedores`} />
+      <PageHeader
+        eyebrow="Gestão"
+        title="Fornecedores"
+        description={`${suppliers.length} fornecedores`}
+        actions={
+          can(user.role, "supplier.manage") ? (
+            <CadastroButton
+              label="Novo fornecedor"
+              title="Novo fornecedor"
+              action={createSupplierRecord}
+              fields={[
+                { name: "name", label: "Nome", required: true, full: true },
+                { name: "category", label: "Categoria", placeholder: "Ex.: Medicamentos" },
+                { name: "contactName", label: "Pessoa de contacto" },
+                { name: "phone", label: "Telefone", type: "tel" },
+                { name: "email", label: "Email", type: "email" },
+                { name: "paymentTerms", label: "Condições de pagamento", placeholder: "30 dias" },
+              ]}
+            />
+          ) : undefined
+        }
+      />
       <Card>
         <CardContent className="p-0">
           <Table>

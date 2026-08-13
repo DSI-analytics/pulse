@@ -12,7 +12,7 @@ import { StatusPill } from "@/components/status-pill";
 import { AgendaActions } from "@/components/agenda-actions";
 import { NovaMarcacao } from "@/components/nova-marcacao";
 import { EmptyState } from "@/components/ui/empty-state";
-import { TYPE_LABEL } from "@/lib/appointment-status";
+import { TYPE_LABEL, isOverdue } from "@/lib/appointment-status";
 import { formatMZN } from "@/lib/money";
 
 function addDays(iso: string, n: number): string {
@@ -48,6 +48,7 @@ export default async function AgendaPage({
     total: appts.filter((a) => a.status !== "CANCELADA").length,
     concluidas: appts.filter((a) => a.status === "CONCLUIDA").length,
     espera: appts.filter((a) => ["CHEGOU", "EM_ESPERA", "EM_CONSULTA"].includes(a.status)).length,
+    atraso: appts.filter((a) => isOverdue(a.status, a.startAt)).length,
     faltas: appts.filter((a) => a.status === "NAO_COMPARECEU").length,
   };
 
@@ -75,6 +76,7 @@ export default async function AgendaPage({
         <div className="flex flex-wrap gap-2">
           <Chip label="Marcações" value={counts.total} />
           <Chip label="Em fila / consulta" value={counts.espera} tone="warning" />
+          <Chip label="Em atraso" value={counts.atraso} tone="danger" />
           <Chip label="Concluídas" value={counts.concluidas} tone="success" />
           <Chip label="Faltas" value={counts.faltas} tone="danger" />
         </div>
@@ -125,7 +127,7 @@ export default async function AgendaPage({
                     )}
                   </TableCell>
                   <TableCell className="text-right text-[13px] tabular">{formatMZN(a.priceQuoted)}</TableCell>
-                  <TableCell><StatusPill status={a.status} /></TableCell>
+                  <TableCell><StatusPill status={a.status} startAt={a.startAt} /></TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end">
                       <AgendaActions id={a.id} status={a.status} />

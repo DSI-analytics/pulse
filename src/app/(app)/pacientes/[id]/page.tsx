@@ -148,7 +148,7 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
                         <p className="text-sm font-medium">{formatDatePt(a.startAt)} · {formatTime(a.startAt)}</p>
                         <p className="text-[13px] text-muted-foreground">{a.doctor.name} · {a.specialty.name}</p>
                       </div>
-                      <StatusPill status={a.status} />
+                      <StatusPill status={a.status} startAt={a.startAt} />
                     </li>
                   ))}
                 </ul>
@@ -172,7 +172,7 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
                           <p className="text-[13px] text-muted-foreground">{formatDateShort(a.startAt)} · {a.doctor.name}</p>
                         </div>
                       </div>
-                      <StatusPill status={a.status} />
+                      <StatusPill status={a.status} startAt={a.startAt} />
                     </li>
                   ))}
                 </ul>

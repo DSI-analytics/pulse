@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { Search, Users, ChevronRight } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
+import { CadastroButton } from "@/components/cadastro-form";
+import { createPatientRecord } from "@/server/crud-actions";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -56,6 +59,28 @@ export default async function PacientesPage({
         eyebrow="Operação"
         title="Pacientes"
         description={`${total.toLocaleString("pt-PT")} pacientes registados`}
+        actions={
+          can(user.role, "patient.manage") ? (
+            <CadastroButton
+              label="Novo paciente"
+              title="Novo paciente"
+              description="Registe um novo paciente na clínica."
+              action={createPatientRecord}
+              fields={[
+                { name: "name", label: "Nome completo", required: true, full: true, placeholder: "Ex.: Ana Machava" },
+                { name: "phone", label: "Telefone", type: "tel", placeholder: "84…" },
+                { name: "birthDate", label: "Data de nascimento", type: "date" },
+                { name: "gender", label: "Género", type: "select", options: [
+                  { value: "FEMININO", label: "Feminino" }, { value: "MASCULINO", label: "Masculino" }, { value: "OUTRO", label: "Outro" },
+                ] },
+                { name: "email", label: "Email", type: "email" },
+                { name: "address", label: "Morada", full: true },
+                { name: "emergencyContactName", label: "Contacto de emergência" },
+                { name: "emergencyContactPhone", label: "Tel. de emergência", type: "tel" },
+              ]}
+            />
+          ) : undefined
+        }
       />
 
       <Card className="p-3">

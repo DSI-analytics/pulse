@@ -48,6 +48,14 @@ export const STATUS_ORDER: AppointmentStatus[] = [
   "CANCELADA",
 ];
 
+// Statuses that are still "open" and therefore can become overdue.
+const OVERDUE_STATUSES: AppointmentStatus[] = ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA"];
+
+/** True when an unresolved appointment's scheduled time is already in the past. */
+export function isOverdue(status: AppointmentStatus, startAt: Date | string, now: Date = new Date()): boolean {
+  return OVERDUE_STATUSES.includes(status) && new Date(startAt).getTime() < now.getTime();
+}
+
 export const TYPE_LABEL: Record<AppointmentType, string> = {
   CONSULTA: "Consulta",
   RETORNO: "Retorno",

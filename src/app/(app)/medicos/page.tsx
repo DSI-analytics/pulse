@@ -1,7 +1,11 @@
 import Link from "next/link";
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/rbac";
+import { prisma } from "@/lib/prisma";
 import { getDoctorCards } from "@/server/doctor-analytics";
+import { createDoctorRecord, createSpecialtyRecord } from "@/server/crud-actions";
 import { PageHeader } from "@/components/page-header";
+import { CadastroButton } from "@/components/cadastro-form";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Avatar } from "@/components/ui/avatar";
@@ -9,7 +13,11 @@ import { formatMZN } from "@/lib/money";
 
 export default async function MedicosPage() {
   const user = await requirePermission("doctor.view");
-  const doctors = await getDoctorCards(user.clinicId);
+  const [doctors, specialties] = await Promise.all([
+    getDoctorCards(user.clinicId),
+    prisma.specialty.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
+  const canManage = can(user.role, "doctor.manage");
 
   return (
     <>
@@ -17,6 +25,40 @@ export default async function MedicosPage() {
         eyebrow="Gestão"
         title="Médicos"
         description="Ocupação, produtividade e capacidade disponível — esta semana."
+        actions={
+          canManage ? (
+            <>
+              <CadastroButton
+                variant="secondary"
+                label="Nova especialidade"
+                title="Nova especialidade"
+                action={createSpecialtyRecord}
+                fields={[
+                  { name: "name", label: "Nome", required: true, full: true, placeholder: "Ex.: Neurologia" },
+                  { name: "color", label: "Cor", type: "select", full: true, defaultValue: "#0C7C74", options: [
+                    { value: "#0C7C74", label: "Teal" }, { value: "#2563a8", label: "Azul" }, { value: "#cb4133", label: "Vermelho" },
+                    { value: "#8a4fbf", label: "Roxo" }, { value: "#b26a06", label: "Âmbar" }, { value: "#1f9d57", label: "Verde" },
+                  ] },
+                ]}
+              />
+              <CadastroButton
+                label="Novo médico"
+                title="Novo médico"
+                description="Adicione um médico e o seu horário padrão (Seg–Sex, 08:00–16:00)."
+                action={createDoctorRecord}
+                fields={[
+                  { name: "name", label: "Nome", required: true, full: true, placeholder: "Ex.: Dra. Marta Sitoe" },
+                  { name: "specialtyId", label: "Especialidade", type: "select", required: true, full: true, options: specialties.map((s) => ({ value: s.id, label: s.name })) },
+                  { name: "consultationPrice", label: "Preço da consulta", type: "money", required: true, suffix: "MZN", placeholder: "1500" },
+                  { name: "consultationDuration", label: "Duração", type: "number", suffix: "min", defaultValue: "30" },
+                  { name: "phone", label: "Telefone", type: "tel" },
+                  { name: "email", label: "Email", type: "email" },
+                  { name: "licenseNumber", label: "Cédula (OMM)", full: true },
+                ]}
+              />
+            </>
+          ) : undefined
+        }
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

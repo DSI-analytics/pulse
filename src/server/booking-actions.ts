@@ -142,6 +142,10 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
 
   const startAt = new Date(data.startAt);
   if (Number.isNaN(startAt.getTime())) return { error: "Data/hora inválida." };
+  // No booking in the past (allow a 2-minute grace for clock skew).
+  if (startAt.getTime() < Date.now() - 2 * 60_000) {
+    return { error: "Não é possível agendar numa data/hora passada." };
+  }
   const endAt = addMinutes(startAt, doctor.consultationDuration);
 
   // Prevent double-booking: any active appointment for this doctor overlapping the slot.

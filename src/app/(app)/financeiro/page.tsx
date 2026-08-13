@@ -1,7 +1,11 @@
 import { Wallet, TrendingDown, TrendingUp, Percent, ArrowDownLeft, ArrowUpRight, Receipt } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/rbac";
+import { prisma } from "@/lib/prisma";
 import { getFinanceData } from "@/server/finance-analytics";
+import { createExpenseRecord } from "@/server/crud-actions";
 import { PageHeader } from "@/components/page-header";
+import { CadastroButton } from "@/components/cadastro-form";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -13,12 +17,41 @@ import { formatDateShort } from "@/lib/datetime";
 
 export default async function FinanceiroPage() {
   const user = await requirePermission("finance.view");
-  const d = await getFinanceData(user.clinicId);
+  const [d, expenseCategories] = await Promise.all([
+    getFinanceData(user.clinicId),
+    prisma.expenseCategory.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
   const k = d.kpis;
 
   return (
     <>
-      <PageHeader eyebrow="Gestão" title="Financeiro" description="Receitas, despesas, recebimentos e fluxo de caixa." />
+      <PageHeader
+        eyebrow="Gestão"
+        title="Financeiro"
+        description="Receitas, despesas, recebimentos e fluxo de caixa."
+        actions={
+          can(user.role, "finance.manage") ? (
+            <CadastroButton
+              label="Nova despesa"
+              title="Nova despesa"
+              action={createExpenseRecord}
+              fields={[
+                { name: "description", label: "Descrição", required: true, full: true, placeholder: "Ex.: Renda de Agosto" },
+                { name: "categoryId", label: "Categoria", type: "select", options: expenseCategories.map((c) => ({ value: c.id, label: c.name })) },
+                { name: "amount", label: "Valor", type: "money", required: true, suffix: "MZN", placeholder: "145000" },
+                { name: "status", label: "Estado", type: "select", defaultValue: "PAGA", options: [
+                  { value: "PAGA", label: "Paga" }, { value: "PENDENTE", label: "Pendente" },
+                ] },
+                { name: "method", label: "Método", type: "select", options: [
+                  { value: "DINHEIRO", label: "Dinheiro" }, { value: "MPESA", label: "M-Pesa" }, { value: "EMOLA", label: "e-Mola" },
+                  { value: "CARTAO", label: "Cartão" }, { value: "TRANSFERENCIA", label: "Transferência" },
+                ] },
+                { name: "incurredAt", label: "Data", type: "date" },
+              ]}
+            />
+          ) : undefined
+        }
+      />
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard label="Receita do mês" value={formatMZN(k.revenue)} icon={Wallet} hint="reconhecida" />

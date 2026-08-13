@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/status-pill";
 import { BarList } from "@/components/bar-list";
-import { TrendChart } from "@/components/charts/trend-chart";
+import { InteractiveTrend } from "@/components/charts/interactive-trend";
 import { InsightsFeed, InsightsHeading } from "@/components/insights-feed";
 import { buttonVariants } from "@/components/ui/button";
 import { formatMZN } from "@/lib/money";
@@ -93,7 +93,7 @@ export default async function DashboardPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <StatusPill status={a.status} />
+                        <StatusPill status={a.status} startAt={a.startAt} />
                       </TableCell>
                     </TableRow>
                   ))}
@@ -132,27 +132,22 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {/* Trends */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Receita Mensal</CardTitle>
-            <CardDescription>Últimos 6 meses</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <TrendChart data={d.revenueTrend} kind="mzn" variant="area" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Consultas por Mês</CardTitle>
-            <CardDescription>Volume de marcações</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-0">
-            <TrendChart data={d.appointmentTrend} kind="int" variant="bar" />
-          </CardContent>
-        </Card>
-      </div>
+      {/* Trends (interactive) */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Tendências mensais</CardTitle>
+          <CardDescription>Últimos 6 meses · alterne entre métricas</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-0">
+          <InteractiveTrend
+            height={240}
+            series={[
+              { key: "receita", label: "Receita", kind: "mzn", variant: "area", data: d.revenueTrend },
+              { key: "consultas", label: "Consultas", kind: "int", variant: "bar", data: d.appointmentTrend },
+            ]}
+          />
+        </CardContent>
+      </Card>
 
       {/* Breakdown + insights */}
       <div className="grid gap-4 lg:grid-cols-3">

@@ -126,8 +126,12 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
     if (!doctorId) return setError("Selecione o médico.");
     if (!date || !time) return setError("Escolha data e hora.");
 
-    setSaving(true);
     const startAt = `${date}T${time}:00+02:00`; // Africa/Maputo
+    if (new Date(startAt).getTime() < Date.now() - 2 * 60_000) {
+      return setError("Não é possível agendar numa data/hora passada.");
+    }
+
+    setSaving(true);
     const res = await createAppointment({
       patientId: patient.id,
       doctorId,
@@ -267,7 +271,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-3 gap-3">
           <div>
             <Label>Data</Label>
-            <Input type="date" className="mt-1.5" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input type="date" className="mt-1.5" min={todayLocal()} value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div>
             <Label>Hora</Label>

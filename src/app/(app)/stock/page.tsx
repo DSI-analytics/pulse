@@ -1,7 +1,10 @@
 import { AlertTriangle, PackageX, CalendarClock, Package } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
+import { CadastroButton } from "@/components/cadastro-form";
+import { createInventoryItemRecord } from "@/server/crud-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -15,11 +18,14 @@ function daysUntil(date: Date | null): number | null {
 
 export default async function StockPage() {
   const user = await requirePermission("inventory.view");
-  const items = await prisma.inventoryItem.findMany({
-    where: { clinicId: user.clinicId },
-    orderBy: { name: "asc" },
-    include: { category: { select: { name: true } }, supplier: { select: { name: true } } },
-  });
+  const [items, categories] = await Promise.all([
+    prisma.inventoryItem.findMany({
+      where: { clinicId: user.clinicId },
+      orderBy: { name: "asc" },
+      include: { category: { select: { name: true } }, supplier: { select: { name: true } } },
+    }),
+    prisma.inventoryCategory.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
 
   const alerts: { icon: any; tone: "danger" | "warning"; text: string }[] = [];
   for (const i of items) {
@@ -36,7 +42,29 @@ export default async function StockPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Gestão" title="Stock" description={`${items.length} artigos · materiais clínicos e operacionais`} />
+      <PageHeader
+        eyebrow="Gestão"
+        title="Stock"
+        description={`${items.length} artigos · materiais clínicos e operacionais`}
+        actions={
+          can(user.role, "inventory.manage") ? (
+            <CadastroButton
+              label="Novo artigo"
+              title="Novo artigo de stock"
+              action={createInventoryItemRecord}
+              fields={[
+                { name: "name", label: "Artigo", required: true, full: true, placeholder: "Ex.: Luvas de nitrilo tam. M" },
+                { name: "sku", label: "SKU", required: true, placeholder: "LUV-M" },
+                { name: "categoryId", label: "Categoria", type: "select", options: categories.map((c) => ({ value: c.id, label: c.name })) },
+                { name: "unit", label: "Unidade", defaultValue: "un", placeholder: "caixa" },
+                { name: "currentStock", label: "Stock atual", type: "number", defaultValue: "0" },
+                { name: "minStock", label: "Stock mínimo", type: "number", defaultValue: "0" },
+                { name: "purchasePrice", label: "Custo unitário", type: "money", suffix: "MZN", placeholder: "850" },
+              ]}
+            />
+          ) : undefined
+        }
+      />
 
       {alerts.length > 0 && (
         <Card className="border-warning/30 bg-warning-muted/30">
