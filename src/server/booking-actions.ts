@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
-import { hasConflict } from "@/lib/domain/availability";
+import { generateDaySlots, hasConflict, type WeeklyRule } from "@/lib/domain/availability";
 
 export interface BookingContext {
   specialties: { id: string; name: string; color: string }[];
@@ -128,6 +128,69 @@ const createSchema = z.object({
   reason: z.string().optional(),
 });
 
+export async function getDoctorAvailability(
+  doctorId: string,
+  date: string,
+): Promise<{ error: string } | { slots: { start: string; label: string }[] }> {
+  const user = await requireUser();
+
+  const doctor = await prisma.doctor.findFirst({
+    where: { id: doctorId, clinicId: user.clinicId },
+    select: {
+      id: true,
+      consultationDuration: true,
+      schedules: {
+        select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true },
+      },
+      availabilityExceptions: {
+        where: {
+          date: new Date(date),
+        },
+        select: { type: true, startTime: true, endTime: true },
+      },
+    },
+  });
+
+  if (!doctor) return { error: "Médico não encontrado." };
+
+  const target = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return { error: "Data inválida." };
+
+  const rule = doctor.schedules.find((s) => s.weekday === target.getDay()) as WeeklyRule | undefined;
+  const busy = await prisma.appointment.findMany({
+    where: {
+      doctorId: doctor.id,
+      clinicId: user.clinicId,
+      status: { notIn: ["CANCELADA", "NAO_COMPARECEU"] },
+      startAt: {
+        gte: new Date(`${date}T00:00:00`),
+        lt: new Date(`${date}T23:59:59`),
+      },
+    },
+    select: { startAt: true, endAt: true },
+  });
+
+  const daySlots = generateDaySlots(
+    target,
+    rule,
+    doctor.availabilityExceptions.map((ex) => ({
+      type: ex.type as "FOLGA" | "FERIAS" | "HORARIO_ESPECIAL" | "BLOQUEIO",
+      startTime: ex.startTime,
+      endTime: ex.endTime,
+    })),
+    busy.map((b) => ({ start: b.startAt, end: b.endAt })),
+  );
+
+  const slots: { start: string; label: string }[] = daySlots
+    .filter((slot) => !slot.taken)
+    .map((slot) => ({
+      start: slot.start.toISOString(),
+      label: `${slot.start.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit", hour12: false })}`,
+    }));
+
+  return { slots };
+}
+
 export async function createAppointment(input: z.input<typeof createSchema>) {
   const user = await requireUser();
   if (!can(user.role, "appointment.manage")) return { error: "Sem permissão para marcar." };
@@ -156,7 +219,21 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
   }
   const endAt = addMinutes(startAt, doctor.consultationDuration);
 
-  // Prevent double-booking: any active appointment for this doctor overlapping the slot.
+  const sameDayRule = await prisma.doctorSchedule.findFirst({
+    where: {
+      doctorId: doctor.id,
+      weekday: startAt.getDay(),
+    },
+    select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true },
+  });
+  const sameDayExceptions = await prisma.doctorAvailabilityException.findMany({
+    where: {
+      doctorId: doctor.id,
+      date: new Date(startAt.toISOString().slice(0, 10)),
+    },
+    select: { type: true, startTime: true, endTime: true },
+  });
+
   const sameDayBusy = await prisma.appointment.findMany({
     where: {
       doctorId: doctor.id,
@@ -167,8 +244,25 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
     select: { startAt: true, endAt: true },
   });
   const busy = sameDayBusy.map((b) => ({ start: b.startAt, end: b.endAt }));
+
   if (hasConflict(busy, startAt, endAt)) {
     return { error: "Conflito de horário: o médico já tem uma marcação nesse período." };
+  }
+
+  const daySlots = generateDaySlots(
+    new Date(startAt.toISOString().slice(0, 10) + "T00:00:00"),
+    sameDayRule ?? undefined,
+    sameDayExceptions.map((ex) => ({
+      type: ex.type as "FOLGA" | "FERIAS" | "HORARIO_ESPECIAL" | "BLOQUEIO",
+      startTime: ex.startTime,
+      endTime: ex.endTime,
+    })),
+    busy,
+  );
+
+  const slotMatches = daySlots.some((slot) => slot.start.getTime() === startAt.getTime());
+  if (!slotMatches) {
+    return { error: "O médico não está disponível nesse dia e horário." };
   }
 
   // An exam / procedure must say which one, and its price drives the quote.

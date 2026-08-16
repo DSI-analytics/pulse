@@ -10,6 +10,7 @@ import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast";
 import {
   getBookingContext,
+  getDoctorAvailability,
   searchPatients,
   quickCreatePatient,
   createAppointment,
@@ -78,7 +79,8 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
   const [specialtyId, setSpecialtyId] = React.useState("");
   const [doctorId, setDoctorId] = React.useState("");
   const [date, setDate] = React.useState(todayLocal());
-  const [time, setTime] = React.useState("09:00");
+  const [time, setTime] = React.useState("");
+  const [availableSlots, setAvailableSlots] = React.useState<string[]>([]);
   const [type, setType] = React.useState("CONSULTA");
   const [serviceId, setServiceId] = React.useState("");
   const [coverage, setCoverage] = React.useState("PARTICULAR"); // PARTICULAR or planId
@@ -105,6 +107,38 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
   );
   const doctor = doctors.find((d) => d.id === doctorId);
   const plan = ctx?.plans.find((p) => p.id === coverage);
+
+  React.useEffect(() => {
+    if (!doctorId || !date) {
+      setAvailableSlots([]);
+      setTime("");
+      return;
+    }
+
+    let active = true;
+    getDoctorAvailability(doctorId, date)
+      .then((res) => {
+        if (!active) return;
+        if ("error" in res && res.error) {
+          setAvailableSlots([]);
+          setTime("");
+          return;
+        }
+
+        const slots = "slots" in res ? res.slots : [];
+        setAvailableSlots(slots.map((slot: { label: string }) => slot.label));
+        setTime(slots[0]?.label ?? "");
+      })
+      .catch(() => {
+        if (!active) return;
+        setAvailableSlots([]);
+        setTime("");
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [doctorId, date]);
   // Exams and procedures need an explicit service, and it sets the price.
   const needsService = type === "EXAME" || type === "PROCEDIMENTO";
   const service = ctx?.services.find((s) => s.id === serviceId);
@@ -132,7 +166,8 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
     setError(null);
     if (!patient) return setError("Selecione ou registe um paciente.");
     if (!doctorId) return setError("Selecione o médico.");
-    if (!date || !time) return setError("Escolha data e hora.");
+    if (!date || !time) return setError("Escolha uma hora em que o médico esteja disponível.");
+    if (!availableSlots.includes(time)) return setError("A hora escolhida não está disponível para o médico.");
     if (needsService && !serviceId) return setError("Indique qual o exame/procedimento a efectuar.");
 
     const startAt = `${date}T${time}:00+02:00`; // Africa/Maputo
@@ -281,11 +316,38 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
         <div className="grid grid-cols-3 gap-3">
           <div>
             <Label>Data</Label>
-            <Input type="date" className="mt-1.5" min={todayLocal()} value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input
+              type="date"
+              className="mt-1.5"
+              min={todayLocal()}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
           </div>
           <div>
             <Label>Hora</Label>
-            <Input type="time" className="mt-1.5" value={time} onChange={(e) => setTime(e.target.value)} />
+            {doctorId && availableSlots.length === 0 ? (
+              <div className="mt-1.5">
+                <Select value="" disabled>
+                  <option value=""> </option>
+                </Select>
+                <p className="mt-1 text-[11px] text-muted-foreground">Sem horários livres para esta data.</p>
+              </div>
+            ) : (
+              <Select
+                className="mt-1.5"
+                value={time}
+                onChange={(e) => setTime(e.target.value)}
+                disabled={!doctorId}
+              >
+                <option value="">{doctorId ? "Selecionar hora" : "Selecione o médico"}</option>
+                {availableSlots.map((slot) => (
+                  <option key={slot} value={slot}>
+                    {slot}
+                  </option>
+                ))}
+              </Select>
+            )}
           </div>
           <div>
             <Label>Tipo</Label>

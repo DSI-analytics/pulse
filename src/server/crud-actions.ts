@@ -238,11 +238,24 @@ export async function deleteDoctorRecord(id: string): Promise<Result> {
   if ("error" in g) return g;
   const existing = await prisma.doctor.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
   if (!existing) return { error: "Médico não encontrado." };
-  const appointmentCount = await prisma.appointment.count({ where: { clinicId: g.clinicId, doctorId: id } });
-  if (appointmentCount > 0) return { error: "Não pode apagar um médico com marcações associadas." };
-  await prisma.doctor.delete({ where: { id: existing.id } });
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.revenue.deleteMany({ where: { clinicId: g.clinicId, doctorId: existing.id } });
+      await tx.appointment.deleteMany({ where: { clinicId: g.clinicId, doctorId: existing.id } });
+      await tx.doctorAvailabilityException.deleteMany({ where: { doctorId: existing.id } });
+      await tx.doctorSchedule.deleteMany({ where: { doctorId: existing.id } });
+      await tx.doctorHealthPlan.deleteMany({ where: { doctorId: existing.id } });
+      await tx.doctor.delete({ where: { id: existing.id, clinicId: g.clinicId } });
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Não foi possível apagar o médico.";
+    return { error: message };
+  }
+
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "doctor.delete", entity: "Doctor", entityId: existing.id });
   revalidatePath("/medicos");
+  revalidatePath(`/medicos/${id}`);
   return { ok: true, id: existing.id };
 }
 
