@@ -10,7 +10,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { StatusPill } from "@/components/status-pill";
 import { buttonVariants } from "@/components/ui/button";
 import { EditPatientButton } from "@/components/patient-editor";
-import { updatePatientRecord } from "@/server/crud-actions";
+import { deletePatientRecord, updatePatientRecord } from "@/server/crud-actions";
 import { formatDatePt, formatDateShort, formatTime } from "@/lib/datetime";
 import { formatMZN } from "@/lib/money";
 import { TYPE_LABEL } from "@/lib/appointment-status";
@@ -101,6 +101,7 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
               emergencyContactPhone: patient.emergencyContactPhone,
             }}
             action={updatePatientRecord}
+            deleteAction={deletePatientRecord}
           />
         )}
       </div>

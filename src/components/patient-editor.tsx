@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, Pencil } from "lucide-react";
+import { Check, Loader2, Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,9 +34,11 @@ function formatDateInput(value: Date | string | null): string {
 export function EditPatientButton({
   patient,
   action,
+  deleteAction,
 }: {
   patient: Patient;
   action: (patientId: string, values: Record<string, string>) => Promise<ActionResult>;
+  deleteAction?: (patientId: string) => Promise<ActionResult>;
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -79,11 +81,33 @@ export function EditPatientButton({
     setOpen(false);
   }
 
+  async function remove() {
+    if (!deleteAction) return;
+    const confirmed = window.confirm(`Tem a certeza que pretende apagar o paciente ${patient.name}?`);
+    if (!confirmed) return;
+
+    setSaving(true);
+    const res = await deleteAction(patient.id);
+    setSaving(false);
+    if ("error" in res) return setError(res.error);
+    toast("Paciente apagado com sucesso");
+    setOpen(false);
+    router.replace("/pacientes");
+    router.refresh();
+  }
+
   return (
     <>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        <Pencil className="size-3.5" /> Editar
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+          <Pencil className="size-3.5" /> Editar
+        </Button>
+        {deleteAction && (
+          <Button variant="danger" size="sm" onClick={remove} disabled={saving}>
+            <Trash2 className="size-3.5" /> Apagar
+          </Button>
+        )}
+      </div>
 
       {open && (
         <Modal

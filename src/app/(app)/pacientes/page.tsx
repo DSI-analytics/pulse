@@ -5,8 +5,7 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
-import { EditPatientButton } from "@/components/patient-editor";
-import { createPatientRecord, updatePatientRecord } from "@/server/crud-actions";
+import { createPatientRecord } from "@/server/crud-actions";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -135,22 +134,8 @@ export default async function PacientesPage({
                   </TableCell>
                   <TableCell className="text-right tabular">{p._count.appointments}</TableCell>
                   <TableCell className="text-[13px] text-muted-foreground">{formatDateShort(p.registeredAt)}</TableCell>
-                  <TableCell className="flex justify-end gap-2">
-                    <EditPatientButton
-                      patient={{
-                        id: p.id,
-                        name: p.name,
-                        phone: p.phone,
-                        email: p.email,
-                        address: p.address,
-                        birthDate: p.birthDate,
-                        gender: p.gender,
-                        emergencyContactName: p.emergencyContactName,
-                        emergencyContactPhone: p.emergencyContactPhone,
-                      }}
-                      action={updatePatientRecord}
-                    />
-                    <Link href={`/pacientes/${p.id}`} className="flex text-subtle-foreground hover:text-foreground">
+                  <TableCell className="text-right">
+                    <Link href={`/pacientes/${p.id}`} className="inline-flex text-subtle-foreground hover:text-foreground">
                       <ChevronRight className="size-4" />
                     </Link>
                   </TableCell>

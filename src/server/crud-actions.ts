@@ -1,5 +1,6 @@
 "use server";
 import { z } from "zod";
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
@@ -79,6 +80,38 @@ export async function updatePatientRecord(patientId: string, values: Values): Pr
   revalidatePath("/pacientes");
   revalidatePath(`/pacientes/${patientId}`);
   return { ok: true, id: patient.id };
+}
+
+export async function deletePatientRecord(patientId: string): Promise<Result> {
+  const g = await guard("patient.manage");
+  if ("error" in g) return g;
+
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, clinicId: g.clinicId },
+    select: { id: true },
+  });
+
+  if (!patient) return { error: "Paciente não encontrado." };
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
+      await tx.revenue.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
+      await tx.invoice.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
+      await tx.consultation.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
+      await tx.appointment.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
+      await tx.patientHealthPlan.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
+      await tx.patient.delete({ where: { id: patient.id, clinicId: g.clinicId } });
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Não foi possível apagar o paciente.";
+    return { error: message };
+  }
+
+  await audit({ clinicId: g.clinicId, userId: g.userId, action: "patient.delete", entity: "Patient", entityId: patient.id });
+  revalidatePath("/pacientes");
+  revalidatePath(`/pacientes/${patientId}`);
+  redirect("/pacientes");
 }
 
 // ── Specialty ────────────────────────────────────────────────────────────
