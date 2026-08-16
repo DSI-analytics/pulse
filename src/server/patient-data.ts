@@ -20,7 +20,7 @@ export function normalizePatientData(values: PatientFormValues) {
     email: nonEmpty(values.email) || null,
     address: nonEmpty(values.address) || null,
     gender: GENDER_VALUES.has(nonEmpty(values.gender)) ? (nonEmpty(values.gender) as "MASCULINO" | "FEMININO" | "OUTRO") : null,
-    birthDate: nonEmpty(values.birthDate) ? new Date(values.birthDate) : null,
+    birthDate: values.birthDate && nonEmpty(values.birthDate) ? new Date(values.birthDate) : null,
     emergencyContactName: nonEmpty(values.emergencyContactName) || null,
     emergencyContactPhone: nonEmpty(values.emergencyContactPhone) || null,
   };

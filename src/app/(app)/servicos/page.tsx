@@ -4,7 +4,8 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
-import { createServiceRecord } from "@/server/crud-actions";
+import { TableRecordCrudCell } from "@/components/table-record-crud-cell";
+import { createServiceRecord, deleteServiceRecord, updateServiceRecord } from "@/server/crud-actions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +81,7 @@ export default async function ServicosPage() {
                   <TableHead className="text-right">Marcações</TableHead>
                   <TableHead className="text-right">Preço</TableHead>
                   <TableHead>Estado</TableHead>
+                  {canManage && <TableHead className="text-right">Ações</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -91,6 +93,29 @@ export default async function ServicosPage() {
                     <TableCell className="text-right tabular">{s._count.appointments}</TableCell>
                     <TableCell className="text-right font-medium tabular">{formatMZN(s.basePrice)}</TableCell>
                     <TableCell><Badge variant={s.isActive ? "success" : "neutral"}>{s.isActive ? "Activo" : "Inactivo"}</Badge></TableCell>
+                    {canManage && (
+                      <TableCell className="text-right">
+                        <TableRecordCrudCell
+                          id={s.id}
+                          title="Editar serviço"
+                          description="Atualize os detalhes do serviço ou exame."
+                          fields={[
+                            { name: "name", label: "Nome", required: true, defaultValue: s.name },
+                            { name: "category", label: "Categoria", defaultValue: s.category },
+                            { name: "source", label: "Tipo", type: "select", defaultValue: s.source, options: [
+                              { value: "EXAME", label: "Exame" },
+                              { value: "PROCEDIMENTO", label: "Procedimento" },
+                              { value: "CONSULTA", label: "Consulta" },
+                              { value: "PRODUTO", label: "Produto" },
+                              { value: "OUTRO", label: "Outro" },
+                            ] },
+                            { name: "basePrice", label: "Preço", type: "money", required: true, defaultValue: String(s.basePrice), suffix: "MZN" },
+                          ]}
+                          updateAction={updateServiceRecord}
+                          deleteAction={deleteServiceRecord}
+                        />
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

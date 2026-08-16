@@ -3,9 +3,10 @@ import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { getFinanceData } from "@/server/finance-analytics";
-import { createExpenseRecord } from "@/server/crud-actions";
+import { createExpenseRecord, deleteExpenseRecord, updateExpenseRecord } from "@/server/crud-actions";
 import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
+import { TableRecordCrudCell } from "@/components/table-record-crud-cell";
 import { KpiCard } from "@/components/kpi-card";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -113,7 +114,7 @@ export default async function FinanceiroPage() {
         <CardHeader><CardTitle>Despesas recentes</CardTitle></CardHeader>
         <CardContent className="pt-0">
           <Table>
-            <TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Categoria</TableHead><TableHead>Descrição</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Valor</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Categoria</TableHead><TableHead>Descrição</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Valor</TableHead>{can(user.role, "finance.manage") && <TableHead className="text-right">Ações</TableHead>}</TableRow></TableHeader>
             <TableBody>
               {d.recentExp.map((e) => (
                 <TableRow key={e.id}>
@@ -122,6 +123,34 @@ export default async function FinanceiroPage() {
                   <TableCell className="text-[13px] text-muted-foreground">{e.description}</TableCell>
                   <TableCell><Badge variant={e.status === "PAGA" ? "success" : e.status === "PENDENTE" ? "warning" : "neutral"}>{e.status === "PAGA" ? "Paga" : e.status === "PENDENTE" ? "Pendente" : "Anulada"}</Badge></TableCell>
                   <TableCell className="text-right font-medium tabular text-danger">{formatMZN(e.amount)}</TableCell>
+                  {can(user.role, "finance.manage") && (
+                    <TableCell className="text-right">
+                      <TableRecordCrudCell
+                        id={e.id}
+                        title="Editar despesa"
+                        description="Atualize os dados da despesa."
+                        fields={[
+                          { name: "description", label: "Descrição", required: true, defaultValue: e.description },
+                          { name: "categoryId", label: "Categoria", type: "select", defaultValue: e.categoryId ?? "", options: expenseCategories.map((c) => ({ value: c.id, label: c.name })) },
+                          { name: "amount", label: "Valor", type: "money", required: true, defaultValue: String(e.amount), suffix: "MZN" },
+                          { name: "status", label: "Estado", type: "select", defaultValue: e.status, options: [
+                            { value: "PAGA", label: "Paga" },
+                            { value: "PENDENTE", label: "Pendente" },
+                          ] },
+                          { name: "method", label: "Método", type: "select", defaultValue: e.method ?? "", options: [
+                            { value: "DINHEIRO", label: "Dinheiro" },
+                            { value: "MPESA", label: "M-Pesa" },
+                            { value: "EMOLA", label: "e-Mola" },
+                            { value: "CARTAO", label: "Cartão" },
+                            { value: "TRANSFERENCIA", label: "Transferência" },
+                          ] },
+                          { name: "incurredAt", label: "Data", type: "date", defaultValue: e.incurredAt ? new Date(e.incurredAt).toISOString().slice(0, 10) : "" },
+                        ]}
+                        updateAction={updateExpenseRecord}
+                        deleteAction={deleteExpenseRecord}
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

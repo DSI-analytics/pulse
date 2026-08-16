@@ -4,7 +4,8 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
-import { createInventoryItemRecord } from "@/server/crud-actions";
+import { TableRecordCrudCell } from "@/components/table-record-crud-cell";
+import { createInventoryItemRecord, deleteInventoryItemRecord, updateInventoryItemRecord } from "@/server/crud-actions";
 import { MovimentoStock } from "@/components/movimento-stock";
 import { formatDateTimePt } from "@/lib/datetime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -137,10 +138,28 @@ export default async function StockPage() {
                     <TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell>
                     {canManage && (
                       <TableCell className="text-right">
-                        <MovimentoStock
-                          items={stockOptions}
-                          item={{ id: i.id, name: i.name, unit: i.unit, currentStock: i.currentStock }}
-                        />
+                        <div className="flex justify-end gap-2">
+                          <TableRecordCrudCell
+                            id={i.id}
+                            title="Editar artigo"
+                            description="Atualize o artigo do stock."
+                            fields={[
+                              { name: "name", label: "Artigo", required: true, defaultValue: i.name },
+                              { name: "sku", label: "SKU", required: true, defaultValue: i.sku },
+                              { name: "categoryId", label: "Categoria", type: "select", defaultValue: i.categoryId ?? "", options: categories.map((c) => ({ value: c.id, label: c.name })) },
+                              { name: "unit", label: "Unidade", defaultValue: i.unit },
+                              { name: "currentStock", label: "Stock atual", type: "number", defaultValue: String(i.currentStock) },
+                              { name: "minStock", label: "Stock mínimo", type: "number", defaultValue: String(i.minStock) },
+                              { name: "purchasePrice", label: "Custo unitário", type: "money", defaultValue: String(i.avgCost), suffix: "MZN" },
+                            ]}
+                            updateAction={updateInventoryItemRecord}
+                            deleteAction={deleteInventoryItemRecord}
+                          />
+                          <MovimentoStock
+                            items={stockOptions}
+                            item={{ id: i.id, name: i.name, unit: i.unit, currentStock: i.currentStock }}
+                          />
+                        </div>
                       </TableCell>
                     )}
                   </TableRow>

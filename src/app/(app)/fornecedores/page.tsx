@@ -3,8 +3,9 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
+import { TableRecordCrudCell } from "@/components/table-record-crud-cell";
 import { NovaCompra } from "@/components/nova-compra";
-import { createSupplierRecord } from "@/server/crud-actions";
+import { createSupplierRecord, deleteSupplierRecord, updateSupplierRecord } from "@/server/crud-actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -98,6 +99,25 @@ export default async function FornecedoresPage() {
                     {outstanding > 0 ? <span className="font-medium text-danger">{formatMZN(outstanding)}</span> : <span className="text-muted-foreground">—</span>}
                   </TableCell>
                   <TableCell className="text-[13px] text-muted-foreground">{last ? formatDateShort(last) : "—"}</TableCell>
+                  {can(user.role, "supplier.manage") && (
+                    <TableCell className="text-right">
+                      <TableRecordCrudCell
+                        id={s.id}
+                        title="Editar fornecedor"
+                        description="Atualize os dados do fornecedor."
+                        fields={[
+                          { name: "name", label: "Nome", required: true, defaultValue: s.name },
+                          { name: "category", label: "Categoria", defaultValue: s.category ?? "" },
+                          { name: "contactName", label: "Pessoa de contacto", defaultValue: s.contactName ?? "" },
+                          { name: "phone", label: "Telefone", type: "tel", defaultValue: s.phone ?? "" },
+                          { name: "email", label: "Email", type: "email", defaultValue: s.email ?? "" },
+                          { name: "paymentTerms", label: "Condições de pagamento", defaultValue: s.paymentTerms ?? "" },
+                        ]}
+                        updateAction={updateSupplierRecord}
+                        deleteAction={deleteSupplierRecord}
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

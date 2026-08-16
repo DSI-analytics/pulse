@@ -31,7 +31,7 @@ export async function getFinanceData(clinicId: string) {
       }),
       prisma.expense.findMany({
         where: { clinicId }, orderBy: { incurredAt: "desc" }, take: 8,
-        select: { id: true, description: true, amount: true, status: true, incurredAt: true, category: { select: { name: true } } },
+        select: { id: true, description: true, amount: true, status: true, incurredAt: true, categoryId: true, method: true, category: { select: { name: true } } },
       }),
       prisma.revenue.findMany({ where: { clinicId, recognisedAt: { gte: startOfMonth(subMonths(now, 5)) } }, select: { amount: true, recognisedAt: true } }),
       prisma.expense.findMany({ where: { clinicId, incurredAt: { gte: startOfMonth(subMonths(now, 5)) } }, select: { amount: true, incurredAt: true } }),

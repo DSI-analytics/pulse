@@ -3,7 +3,8 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
-import { createHealthPlanRecord } from "@/server/crud-actions";
+import { TableRecordCrudCell } from "@/components/table-record-crud-cell";
+import { createHealthPlanRecord, deleteHealthPlanRecord, updateHealthPlanRecord } from "@/server/crud-actions";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -101,6 +102,23 @@ export default async function PlanosPage() {
                   <TableCell className="text-right tabular font-medium text-danger">{formatMZN(pending)}</TableCell>
                   <TableCell className="text-right tabular text-muted-foreground">{p.insuranceCompany.paymentTermDays}d</TableCell>
                   <TableCell><Badge variant={p.isActive ? "success" : "neutral"}>{p.isActive ? "Activo" : "Inactivo"}</Badge></TableCell>
+                  {can(user.role, "healthplan.manage") && (
+                    <TableCell className="text-right">
+                      <TableRecordCrudCell
+                        id={p.id}
+                        title="Editar plano"
+                        description="Atualize os dados do plano de saúde."
+                        fields={[
+                          { name: "insuranceCompanyId", label: "Seguradora", type: "select", required: true, defaultValue: p.insuranceCompanyId, options: insurers.map((i) => ({ value: i.id, label: i.name })) },
+                          { name: "name", label: "Nome do plano", required: true, defaultValue: p.name },
+                          { name: "contractPrice", label: "Preço de contrato", type: "money", required: true, defaultValue: String(p.contractPrice), suffix: "MZN" },
+                          { name: "patientCopay", label: "Co-pagamento", type: "money", defaultValue: String(p.patientCopay), suffix: "MZN" },
+                        ]}
+                        updateAction={updateHealthPlanRecord}
+                        deleteAction={deleteHealthPlanRecord}
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>
