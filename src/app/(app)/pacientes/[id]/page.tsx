@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { StatusPill } from "@/components/status-pill";
 import { buttonVariants } from "@/components/ui/button";
+import { EditPatientButton } from "@/components/patient-editor";
+import { updatePatientRecord } from "@/server/crud-actions";
 import { formatDatePt, formatDateShort, formatTime } from "@/lib/datetime";
 import { formatMZN } from "@/lib/money";
 import { TYPE_LABEL } from "@/lib/appointment-status";
@@ -85,6 +87,22 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
             {plan ? <Badge variant="info">{plan.insuranceCompany.name} · {plan.name}</Badge> : <Badge variant="neutral">Particular</Badge>}
           </div>
         </div>
+        {can(user.role, "patient.manage") && (
+          <EditPatientButton
+            patient={{
+              id: patient.id,
+              name: patient.name,
+              phone: patient.phone,
+              email: patient.email,
+              address: patient.address,
+              birthDate: patient.birthDate,
+              gender: patient.gender,
+              emergencyContactName: patient.emergencyContactName,
+              emergencyContactPhone: patient.emergencyContactPhone,
+            }}
+            action={updatePatientRecord}
+          />
+        )}
       </div>
 
       {/* Financial summary */}

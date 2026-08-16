@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { can, type Permission } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { parseMZN } from "@/lib/money";
+import { normalizePatientData } from "@/server/patient-data";
 
 type Values = Record<string, string>;
 type Result = { ok: true; id?: string } | { error: string };
@@ -28,26 +29,56 @@ export async function createPatientRecord(values: Values): Promise<Result> {
 
   const count = await prisma.patient.count({ where: { clinicId: g.clinicId } });
   const code = `PAC-${String(count + 1).padStart(5, "0")}`;
-  const gender = ["MASCULINO", "FEMININO", "OUTRO"].includes(values.gender) ? (values.gender as never) : null;
+  const normalized = normalizePatientData(values);
 
   const p = await prisma.patient.create({
     data: {
       clinicId: g.clinicId,
       code,
-      name: parsed.data.name,
-      phone: nonEmpty(values.phone) || null,
-      email: nonEmpty(values.email) || null,
-      address: nonEmpty(values.address) || null,
-      gender,
-      birthDate: values.birthDate ? new Date(values.birthDate) : null,
-      emergencyContactName: nonEmpty(values.emergencyContactName) || null,
-      emergencyContactPhone: nonEmpty(values.emergencyContactPhone) || null,
+      ...normalized,
     },
     select: { id: true },
   });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "patient.create", entity: "Patient", entityId: p.id });
   revalidatePath("/pacientes");
   return { ok: true, id: p.id };
+}
+
+export async function updatePatientRecord(patientId: string, values: Values): Promise<Result> {
+  const g = await guard("patient.manage");
+  if ("error" in g) return g;
+
+  const patient = await prisma.patient.findFirst({
+    where: { id: patientId, clinicId: g.clinicId },
+    select: { id: true },
+  });
+
+  if (!patient) return { error: "Paciente não encontrado." };
+
+  try {
+    const normalized = normalizePatientData(values);
+    await prisma.patient.update({
+      where: { id: patient.id },
+      data: {
+        name: normalized.name,
+        phone: normalized.phone,
+        email: normalized.email,
+        address: normalized.address,
+        gender: normalized.gender,
+        birthDate: normalized.birthDate,
+        emergencyContactName: normalized.emergencyContactName,
+        emergencyContactPhone: normalized.emergencyContactPhone,
+      },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Dados inválidos.";
+    return { error: message };
+  }
+
+  await audit({ clinicId: g.clinicId, userId: g.userId, action: "patient.update", entity: "Patient", entityId: patient.id });
+  revalidatePath("/pacientes");
+  revalidatePath(`/pacientes/${patientId}`);
+  return { ok: true, id: patient.id };
 }
 
 // ── Specialty ────────────────────────────────────────────────────────────
