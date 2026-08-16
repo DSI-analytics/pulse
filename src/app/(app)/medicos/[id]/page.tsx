@@ -2,7 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Phone, Mail, IdCard, Clock, Gauge, CalendarX2, TrendingUp } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
+import { can } from "@/lib/rbac";
+import { prisma } from "@/lib/prisma";
 import { getDoctorDetail } from "@/server/doctor-analytics";
+import { updateDoctorRecord, deleteDoctorRecord } from "@/server/crud-actions";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +13,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KpiCard } from "@/components/kpi-card";
 import { CapacityHeatmap } from "@/components/capacity-heatmap";
 import { TrendChart } from "@/components/charts/trend-chart";
+import { RecordCrudButton } from "@/components/record-crud-button";
 import { formatMZN } from "@/lib/money";
 
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -17,9 +21,21 @@ const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 export default async function DoctorDetail({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission("doctor.view");
   const { id } = await params;
-  const data = await getDoctorDetail(user.clinicId, id);
+  const [data, doctor, specialties] = await Promise.all([
+    getDoctorDetail(user.clinicId, id),
+    prisma.doctor.findUnique({
+      where: { id, clinicId: user.clinicId },
+      select: { id: true, name: true, specialtyId: true, phone: true, email: true, licenseNumber: true, consultationPrice: true, consultationDuration: true },
+    }),
+    prisma.specialty.findMany({
+      where: { clinicId: user.clinicId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
   if (!data) notFound();
-  const { doctor, metrics, receita, blocks, heat, trend } = data;
+  const { doctor: doctorData, metrics, receita, blocks, heat, trend } = data;
+  const canManage = can(user.role, "doctor.manage");
 
   return (
     <>
@@ -28,17 +44,36 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
       </Link>
 
       <div className="flex flex-wrap items-center gap-4">
-        <Avatar name={doctor.name} color={doctor.color} className="size-14 text-lg" />
+        <Avatar name={doctorData.name} color={doctorData.color} className="size-14 text-lg" />
         <div className="flex-1">
-          <h1 className="font-display text-2xl font-semibold">{doctor.name}</h1>
+          <h1 className="font-display text-2xl font-semibold">{doctorData.name}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <Badge variant="default">{doctor.specialty}</Badge>
-            <span>Consulta {formatMZN(doctor.price)}</span>
+            <Badge variant="default">{doctorData.specialty}</Badge>
+            <span>Consulta {formatMZN(doctorData.price)}</span>
             <span>·</span>
-            <span>{doctor.duration} min</span>
-            <Badge variant={doctor.status === "ACTIVO" ? "success" : "neutral"}>{doctor.status === "ACTIVO" ? "Activo" : "Inactivo"}</Badge>
+            <span>{doctorData.duration} min</span>
+            <Badge variant={doctorData.status === "ACTIVO" ? "success" : "neutral"}>{doctorData.status === "ACTIVO" ? "Activo" : "Inactivo"}</Badge>
           </div>
         </div>
+        {canManage && doctor && (
+          <RecordCrudButton
+            id={id}
+            title="Editar médico"
+            description="Atualize os dados do médico."
+            fields={[
+              { name: "name", label: "Nome", required: true, defaultValue: doctor.name },
+              { name: "specialtyId", label: "Especialidade", type: "select", required: true, defaultValue: doctor.specialtyId ?? "", options: specialties.map((s) => ({ value: s.id, label: s.name })) },
+              { name: "consultationPrice", label: "Preço da consulta", type: "money", required: true, defaultValue: String(doctor.consultationPrice), suffix: "MZN" },
+              { name: "consultationDuration", label: "Duração", type: "number", defaultValue: String(doctor.consultationDuration) },
+              { name: "phone", label: "Telefone", type: "tel", defaultValue: doctor.phone ?? "" },
+              { name: "email", label: "Email", type: "email", defaultValue: doctor.email ?? "" },
+              { name: "licenseNumber", label: "Cédula (OMM)", defaultValue: doctor.licenseNumber ?? "" },
+            ]}
+            updateAction={updateDoctorRecord}
+            deleteAction={deleteDoctorRecord}
+            redirectOnDelete="/medicos"
+          />
+        )}
       </div>
 
       {/* Analytics */}
@@ -92,13 +127,13 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
             <CardTitle>Horário e contactos</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2.5 pt-0 text-sm">
-            <div className="flex items-center gap-2.5"><Phone className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Telefone</span><span className="ml-auto font-medium">{doctor.phone ?? "—"}</span></div>
-            <div className="flex items-center gap-2.5"><Mail className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Email</span><span className="ml-auto font-medium">{doctor.email ?? "—"}</span></div>
-            <div className="flex items-center gap-2.5"><IdCard className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Cédula</span><span className="ml-auto font-mono text-[13px]">{doctor.license ?? "—"}</span></div>
+            <div className="flex items-center gap-2.5"><Phone className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Telefone</span><span className="ml-auto font-medium">{doctorData.phone ?? "—"}</span></div>
+            <div className="flex items-center gap-2.5"><Mail className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Email</span><span className="ml-auto font-medium">{doctorData.email ?? "—"}</span></div>
+            <div className="flex items-center gap-2.5"><IdCard className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Cédula</span><span className="ml-auto font-mono text-[13px]">{doctorData.license ?? "—"}</span></div>
             <div className="border-t border-border pt-2.5">
               <p className="mb-1.5 text-xs text-muted-foreground">Horário de trabalho</p>
               <ul className="space-y-1">
-                {doctor.schedules.map((s) => (
+                {doctorData.schedules.map((s) => (
                   <li key={s.id} className="flex justify-between text-[13px]">
                     <span>{WEEKDAYS[s.weekday]}</span>
                     <span className="tabular text-muted-foreground">
