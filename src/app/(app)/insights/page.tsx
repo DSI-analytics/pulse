@@ -1,32 +1,33 @@
-import { Sparkles, MessageSquare } from "lucide-react";
-import { requirePermission } from "@/lib/auth";
+import { Sparkles, MessageSquare, ShieldCheck } from "lucide-react";
+import { requirePermission, authorizedClinicIds } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { getInsights } from "@/server/insights";
+import { suggestionsFor } from "@/server/insights-assistant";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { InsightsFeed } from "@/components/insights-feed";
+import { InsightsChat } from "@/components/insights-chat";
 import { Badge } from "@/components/ui/badge";
 
-const FUTURE_QUESTIONS = [
-  "Como correu este mês?",
-  "Qual médico tem maior ocupação?",
-  "Qual especialidade está a crescer?",
-  "Quanto temos por receber das seguradoras?",
-  "Quais materiais precisam ser comprados?",
-  "Qual médico tem capacidade disponível amanhã?",
-  "Qual plano de saúde gera mais receita?",
-  "Porque caiu a receita esta semana?",
-];
-
 export default async function InsightsPage() {
-  const user = await requirePermission("dashboard.view");
-  const insights = await getInsights(user.clinicId);
+  // `insights.view` — o Gestor da Clínica tem-na; não implica acesso administrativo.
+  const user = await requirePermission("insights.view");
+
+  const [insights, clinics, authorized] = await Promise.all([
+    getInsights(user.clinicId),
+    prisma.clinic.findMany({ where: { id: user.clinicId }, select: { id: true, name: true } }),
+    authorizedClinicIds(user),
+  ]);
+
+  const suggestions = suggestionsFor(user);
+  const clinicName = clinics[0]?.name ?? "a sua instituição";
 
   return (
     <>
       <PageHeader
         eyebrow="Assistente"
         title="Insights"
-        description="Análise automática dos dados da clínica — determinística, sem diagnóstico clínico."
+        description={`Indicadores de ${clinicName} — dados agregados, sem diagnóstico clínico.`}
       />
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
@@ -40,27 +41,23 @@ export default async function InsightsPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <MessageSquare className="size-4 text-primary" /> Assistente de gestão
-              <Badge variant="neutral">Fase 2</Badge>
+              {authorized.length > 1 && <Badge variant="neutral">{authorized.length} instituições autorizadas</Badge>}
             </CardTitle>
             <CardDescription>
-              A arquitetura já expõe métricas agregadas e seguras para um assistente conversacional. Perguntas que
-              poderá responder:
+              Pergunte em linguagem natural. As respostas usam apenas indicadores agregados a que o seu perfil tem acesso.
             </CardDescription>
           </CardHeader>
-          <CardContent className="pt-0">
-            <ul className="space-y-2">
-              {FUTURE_QUESTIONS.map((q) => (
-                <li key={q} className="rounded-md border border-dashed border-border-strong bg-surface-2/40 px-3 py-2 text-[13px] text-muted-foreground">
-                  “{q}”
-                </li>
-              ))}
-            </ul>
-            <p className="mt-3 text-xs text-subtle-foreground">
-              Os dados são agregados por clínica; nenhum dado sensível de paciente é exposto ao assistente.
+          <CardContent className="flex flex-1 flex-col pt-0">
+            <InsightsChat suggestions={suggestions} />
+            <p className="mt-3 flex items-start gap-1.5 text-xs text-subtle-foreground">
+              <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              O assistente não tem acesso à base de dados: escolhe um indicador de uma lista fixa e o servidor executa a
+              consulta já limitada à sua instituição e às suas permissões. Nenhum dado individual de paciente é enviado
+              ao modelo.
             </p>
           </CardContent>
         </Card>

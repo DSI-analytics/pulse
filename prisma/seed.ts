@@ -4,8 +4,8 @@
  *
  *   npm run db:seed
  */
-import { PrismaClient } from "@prisma/client";
-import { randomUUID } from "node:crypto";
+import { AppointmentStatus, PrismaClient, Prisma, RevenueSource, UserRole } from "@prisma/client";
+import { createHash, randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
@@ -31,9 +31,34 @@ const fullName = (f: boolean) => `${pick(f ? FIRST_F : FIRST_M)} ${pick(LAST)}`;
 
 async function main() {
   console.log("› A limpar dados anteriores…");
+
+  // O trigger `audit_log_append_only` rejeita DELETE em "AuditLog" — é essa a
+  // garantia de imutabilidade. TRUNCATE não dispara triggers de linha e exige
+  // privilégio de dono da tabela, pelo que continua a não existir nenhum
+  // caminho da aplicação capaz de apagar o rasto: só esta ferramenta de
+  // reposição de ambiente de desenvolvimento.
+  await prisma.$executeRawUnsafe('TRUNCATE TABLE "AuditLog"');
+
   // Order matters (FKs). Cascades handle most, but be explicit for clarity.
   await prisma.$transaction([
-    prisma.auditLog.deleteMany(),
+    prisma.fhirResource.deleteMany(),
+    prisma.apiClient.deleteMany(),
+    prisma.loginAttempt.deleteMany(),
+    prisma.clinicalAttachment.deleteMany(),
+    prisma.diagnosticResultItem.deleteMany(),
+    prisma.diagnosticResult.deleteMany(),
+    prisma.diagnosticOrder.deleteMany(),
+    prisma.prescriptionItem.deleteMany(),
+    prisma.prescription.deleteMany(),
+    prisma.medication.deleteMany(),
+    prisma.clinicalProcedure.deleteMany(),
+    prisma.treatment.deleteMany(),
+    prisma.admission.deleteMany(),
+    prisma.vitalSign.deleteMany(),
+    prisma.diagnosis.deleteMany(),
+    prisma.allergy.deleteMany(),
+    prisma.patientIdentityDocument.deleteMany(),
+    prisma.userClinicAccess.deleteMany(),
     prisma.notification.deleteMany(),
     prisma.payment.deleteMany(),
     prisma.invoiceItem.deleteMany(),
@@ -41,6 +66,7 @@ async function main() {
     prisma.revenue.deleteMany(),
     prisma.consultation.deleteMany(),
     prisma.appointment.deleteMany(),
+    prisma.encounter.deleteMany(),
     prisma.inventoryMovement.deleteMany(),
     prisma.purchaseItem.deleteMany(),
     prisma.purchase.deleteMany(),
@@ -49,6 +75,7 @@ async function main() {
     prisma.inventoryItem.deleteMany(),
     prisma.inventoryCategory.deleteMany(),
     prisma.supplier.deleteMany(),
+    prisma.patientPortalAccess.deleteMany(),
     prisma.patientHealthPlan.deleteMany(),
     prisma.doctorHealthPlan.deleteMany(),
     prisma.doctorAvailabilityException.deleteMany(),
@@ -91,13 +118,20 @@ async function main() {
   // ── Users ───────────────────────────────────────────────────────────────
   console.log("› Utilizadores…");
   const pass = bcrypt.hashSync("pulso123", 10);
-  const mkUser = (name: string, email: string, role: any) =>
+  const mkUser = (name: string, email: string, role: UserRole) =>
     prisma.user.create({ data: { clinicId, name, email, passwordHash: pass, role } });
   const admin = await mkUser("Dra. Marina Uamusse", "admin@clinicamarianu.mz", "CLINIC_ADMIN");
   await mkUser("Cátia Sousa", "rececao@clinicamarianu.mz", "RECEPTIONIST");
   const medicoUser = await mkUser("Dr. Rui Machava", "medico@clinicamarianu.mz", "DOCTOR");
   await mkUser("Elton Cossa", "financeiro@clinicamarianu.mz", "FINANCE");
   await mkUser("Nádia Tembe", "stock@clinicamarianu.mz", "INVENTORY_MANAGER");
+  await mkUser("Enf. Célia Bila", "enfermagem@clinicamarianu.mz", "NURSE");
+  await mkUser("Hélder Nhaca", "laboratorio@clinicamarianu.mz", "LAB_TECHNICIAN");
+
+  // Gestor da Clínica: Insights da sua instituição, sem privilégios
+  // administrativos. O acesso institucional é explícito (UserClinicAccess).
+  const gestor = await mkUser("Sérgio Bila", "gestor@clinicamarianu.mz", "CLINIC_MANAGER");
+  await prisma.userClinicAccess.create({ data: { userId: gestor.id, clinicId } });
 
   // ── Specialties ─────────────────────────────────────────────────────────
   console.log("› Especialidades…");
@@ -169,7 +203,7 @@ async function main() {
   ];
   await prisma.service.createMany({
     data: serviceDefs.map((s) => ({
-      clinicId, name: s.n, category: s.c, source: s.s as any, basePrice: MZN(s.p),
+      clinicId, name: s.n, category: s.c, source: s.s as RevenueSource, basePrice: MZN(s.p),
     })),
   });
 
@@ -233,7 +267,7 @@ async function main() {
   // ── Patients ───────────────────────────────────────────────────────────
   console.log("› 300 pacientes…");
   const patients: { id: string; planId: string | null; copay: number }[] = [];
-  const patientRows = [];
+  const patientRows: Prisma.PatientCreateManyInput[] = [];
   const phpRows = [];
   for (let i = 1; i <= 300; i++) {
     const female = chance(0.55);
@@ -244,9 +278,13 @@ async function main() {
       clinicId,
       code: `PAC-${String(i).padStart(5, "0")}`,
       name: fullName(female),
-      gender: female ? "FEMININO" : ("MASCULINO" as any),
+      gender: female ? "FEMININO" : "MASCULINO",
       birthDate: new Date(Date.UTC(birthYear, int(0, 11), int(1, 28))),
       phone: "+258 8" + int(2, 7) + " " + int(100, 999) + " " + int(1000, 9999),
+      email: i === 1 ? "paciente@clinicamarianu.mz" : null,
+      address: i === 1 ? "Maputo" : null,
+      emergencyContactName: i === 1 ? "Contacto familiar" : null,
+      emergencyContactPhone: i === 1 ? "+258 84 000 0000" : null,
       registeredAt: new Date(Date.now() - int(10, 900) * 86400000),
     });
     // ~55% have a health plan
@@ -266,8 +304,16 @@ async function main() {
     }
     patients.push({ id, planId, copay });
   }
-  await prisma.patient.createMany({ data: patientRows as any });
-  await prisma.patientHealthPlan.createMany({ data: phpRows as any });
+  await prisma.patient.createMany({ data: patientRows });
+  await prisma.patientHealthPlan.createMany({ data: phpRows });
+  const demoPortalToken = "pulso-demo-patient-token-2026-rotate-me";
+  await prisma.patientPortalAccess.create({
+    data: {
+      clinicId,
+      patientId: patients[0].id,
+      tokenHash: createHash("sha256").update(demoPortalToken).digest("hex"),
+    },
+  });
 
   // ── Suppliers ──────────────────────────────────────────────────────────
   console.log("› Fornecedores…");
@@ -384,7 +430,7 @@ async function main() {
     "Internet": 12000, "Material clínico": 88000, "Medicamentos": 64000, "Manutenção": 25000,
     "Limpeza": 18000, "Impostos": 95000,
   };
-  const expenseRows: any[] = [];
+  const expenseRows: Prisma.ExpenseCreateManyInput[] = [];
   // Spread expenses weekly over the last ~13 weeks for a realistic cash outflow.
   for (let daysAgo = 91; daysAgo >= 0; daysAgo -= 7) {
     const when = new Date(Date.now() - daysAgo * 86400000);
@@ -409,12 +455,12 @@ async function main() {
   const endDay = new Date(today);
   endDay.setUTCDate(endDay.getUTCDate() + 12);
 
-  const apptRows: any[] = [];
-  const consultRows: any[] = [];
-  const revenueRows: any[] = [];
-  const invoiceRows: any[] = [];
-  const invoiceItemRows: any[] = [];
-  const paymentRows: any[] = [];
+  const apptRows: Prisma.AppointmentCreateManyInput[] = [];
+  const consultRows: Prisma.ConsultationCreateManyInput[] = [];
+  const revenueRows: Prisma.RevenueCreateManyInput[] = [];
+  const invoiceRows: Prisma.InvoiceCreateManyInput[] = [];
+  const invoiceItemRows: Prisma.InvoiceItemCreateManyInput[] = [];
+  const paymentRows: Prisma.PaymentCreateManyInput[] = [];
   let invoiceSeq = 1;
 
   const SLOTS = ["08:00","08:30","09:00","09:30","10:00","10:30","11:00","11:30","13:30","14:00","14:30","15:00","15:30"];
@@ -439,7 +485,7 @@ async function main() {
         const type = chance(0.25) ? "RETORNO" : "CONSULTA";
 
         // status distribution
-        let status: string;
+        let status: AppointmentStatus;
         if (isPast) {
           const r = rand();
           status = r < 0.82 ? "CONCLUIDA" : r < 0.92 ? "NAO_COMPARECEU" : "CANCELADA";
@@ -517,6 +563,240 @@ async function main() {
   for (const c of chunk(invoiceItemRows, 1000)) await prisma.invoiceItem.createMany({ data: c });
   for (const c of chunk(paymentRows, 1000)) await prisma.payment.createMany({ data: c });
 
+  // ── Prontuário clínico electrónico ────────────────────────────────────────
+  // Dados inteiramente fictícios (§42): nenhum paciente real, nenhum registo
+  // clínico real, nenhuma credencial real.
+  console.log("› Prontuário clínico (episódios, alergias, prescrições, exames)…");
+
+  const medicationDefs = [
+    { name: "Amoxicilina 500 mg", activeIngredient: "Amoxicilina", form: "cápsula", strength: "500 mg" },
+    { name: "Paracetamol 1 g", activeIngredient: "Paracetamol", form: "comprimido", strength: "1 g" },
+    { name: "Ibuprofeno 400 mg", activeIngredient: "Ibuprofeno", form: "comprimido", strength: "400 mg" },
+    { name: "Losartan 50 mg", activeIngredient: "Losartan", form: "comprimido", strength: "50 mg" },
+    { name: "Metformina 850 mg", activeIngredient: "Metformina", form: "comprimido", strength: "850 mg" },
+    { name: "Salbutamol inalador", activeIngredient: "Salbutamol", form: "inalador", strength: "100 mcg/dose" },
+    { name: "Omeprazol 20 mg", activeIngredient: "Omeprazol", form: "cápsula", strength: "20 mg" },
+    { name: "Artemeter + Lumefantrina", activeIngredient: "Artemeter", form: "comprimido", strength: "20/120 mg" },
+  ];
+  await prisma.medication.createMany({
+    data: medicationDefs.map((m) => ({ clinicId, ...m, codeSystem: "interno" })),
+  });
+  const medications = await prisma.medication.findMany({ where: { clinicId }, select: { id: true, name: true, activeIngredient: true } });
+
+  const allergyDefs = [
+    { substance: "Penicilina", category: "MEDICAMENTO" as const, severity: "GRAVE" as const, reaction: "Urticária generalizada e edema" },
+    { substance: "Sulfamidas", category: "MEDICAMENTO" as const, severity: "MODERADA" as const, reaction: "Erupção cutânea" },
+    { substance: "Amendoim", category: "ALIMENTO" as const, severity: "GRAVE" as const, reaction: "Dificuldade respiratória" },
+    { substance: "Pólen", category: "AMBIENTAL" as const, severity: "LEVE" as const, reaction: "Rinite" },
+    { substance: "Lactose", category: "ALIMENTO" as const, severity: "LEVE" as const, reaction: "Desconforto abdominal" },
+    { substance: "Ibuprofeno", category: "MEDICAMENTO" as const, severity: "MODERADA" as const, reaction: "Dor gástrica" },
+  ];
+
+  const diagnosisDefs = [
+    { description: "Hipertensão essencial (primária)", code: "I10" },
+    { description: "Diabetes mellitus tipo 2", code: "E11" },
+    { description: "Infecção respiratória aguda", code: "J06" },
+    { description: "Malária não complicada", code: "B54" },
+    { description: "Gastrite", code: "K29" },
+    { description: "Asma", code: "J45" },
+    { description: "Anemia ferropénica", code: "D50" },
+  ];
+
+  const examDefs = [
+    { name: "Hemograma completo", category: "LABORATORIO" as const, code: "58410-2" },
+    { name: "Glicemia em jejum", category: "LABORATORIO" as const, code: "1558-6" },
+    { name: "Teste rápido de malária", category: "LABORATORIO" as const, code: "70092-9" },
+    { name: "Radiografia do tórax", category: "IMAGIOLOGIA" as const, code: "36643-5" },
+    { name: "Ecografia abdominal", category: "IMAGIOLOGIA" as const, code: "24531-6" },
+  ];
+
+  const normaliseKey = (value: string) =>
+    value.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  // Alergias em ~18% dos pacientes.
+  const allergyRows: Prisma.AllergyCreateManyInput[] = [];
+  for (const patient of patients) {
+    if (!chance(0.18)) continue;
+    const def = pick(allergyDefs);
+    allergyRows.push({
+      clinicId,
+      patientId: patient.id,
+      substance: def.substance,
+      substanceKey: normaliseKey(def.substance),
+      category: def.category,
+      kind: def.category === "ALIMENTO" && def.severity === "LEVE" ? "INTOLERANCIA" : "ALERGIA",
+      reaction: def.reaction,
+      severity: def.severity,
+      status: "ACTIVA",
+      identifiedAt: new Date(Date.now() - int(200, 2000) * 86400000),
+      doctorId: pick(doctors).id,
+    });
+  }
+  await prisma.allergy.createMany({ data: allergyRows, skipDuplicates: true });
+
+  // Episódios clínicos construídos a partir das consultas já concluídas.
+  const completed = consultRows.slice(0, Math.min(consultRows.length, 400));
+  const encounterRows: Prisma.EncounterCreateManyInput[] = [];
+  const vitalRows: Prisma.VitalSignCreateManyInput[] = [];
+  const diagnosisRows: Prisma.DiagnosisCreateManyInput[] = [];
+  const prescriptionRows: Prisma.PrescriptionCreateManyInput[] = [];
+  const prescriptionItemRows: Prisma.PrescriptionItemCreateManyInput[] = [];
+  const orderRows: Prisma.DiagnosticOrderCreateManyInput[] = [];
+  const resultRows: Prisma.DiagnosticResultCreateManyInput[] = [];
+  const resultItemRows: Prisma.DiagnosticResultItemCreateManyInput[] = [];
+
+  let seq = 0;
+  for (const consultation of completed) {
+    seq += 1;
+    const year = new Date(consultation.startedAt as Date).getUTCFullYear();
+    const encounterId = randomUUID();
+    encounterRows.push({
+      id: encounterId,
+      clinicId,
+      branchId: branch.id,
+      patientId: consultation.patientId as string,
+      doctorId: consultation.doctorId as string,
+      number: `EPI-${year}-${String(seq).padStart(5, "0")}`,
+      type: "CONSULTA",
+      status: "CONCLUIDO",
+      startedAt: consultation.startedAt as Date,
+      endedAt: (consultation.endedAt as Date) ?? (consultation.startedAt as Date),
+      createdById: admin.id,
+    });
+
+    const weightKg = Math.round((50 + Math.random() * 45) * 10) / 10;
+    const heightCm = Math.round(150 + Math.random() * 40);
+    const metres = heightCm / 100;
+    vitalRows.push({
+      clinicId,
+      patientId: consultation.patientId as string,
+      encounterId,
+      consultationId: consultation.id as string,
+      recordedAt: consultation.startedAt as Date,
+      recordedById: medicoUser.id,
+      systolic: int(100, 165),
+      diastolic: int(60, 100),
+      heartRate: int(55, 105),
+      respiratoryRate: int(12, 22),
+      temperature: Math.round((36 + Math.random() * 2) * 10) / 10,
+      oxygenSaturation: int(93, 100),
+      weightKg,
+      heightCm,
+      bmi: Math.round((weightKg / (metres * metres)) * 10) / 10,
+    });
+
+    if (chance(0.8)) {
+      const def = pick(diagnosisDefs);
+      diagnosisRows.push({
+        clinicId,
+        patientId: consultation.patientId as string,
+        encounterId,
+        consultationId: consultation.id as string,
+        kind: "PRINCIPAL",
+        certainty: chance(0.7) ? "CONFIRMADO" : "PROVISORIO",
+        code: def.code,
+        codeSystem: "ICD-10",
+        description: def.description,
+        recordedAt: consultation.startedAt as Date,
+        doctorId: consultation.doctorId as string,
+        recordedById: medicoUser.id,
+      });
+    }
+
+    if (chance(0.65)) {
+      const prescriptionId = randomUUID();
+      prescriptionRows.push({
+        id: prescriptionId,
+        clinicId,
+        patientId: consultation.patientId as string,
+        encounterId,
+        consultationId: consultation.id as string,
+        doctorId: consultation.doctorId as string,
+        number: `REC-${year}-${String(seq).padStart(5, "0")}`,
+        status: chance(0.35) ? "ACTIVA" : "CONCLUIDA",
+        issuedAt: consultation.startedAt as Date,
+        createdById: medicoUser.id,
+      });
+      for (let i = 0; i < int(1, 3); i += 1) {
+        const med = pick(medications);
+        prescriptionItemRows.push({
+          prescriptionId,
+          medicationId: med.id,
+          medicationName: med.name,
+          activeIngredient: med.activeIngredient,
+          dose: pick(["1", "2", "500", "850"]),
+          doseUnit: pick(["comprimido", "mg", "dose"]),
+          route: "ORAL",
+          frequency: pick(["8/8h", "12/12h", "1x/dia", "SOS"]),
+          durationDays: pick([3, 5, 7, 14, 30]),
+          instructions: pick(["Após as refeições", "Em jejum", "Com água", null]),
+        });
+      }
+    }
+
+    if (chance(0.35)) {
+      const exam = pick(examDefs);
+      const orderId = randomUUID();
+      const concluded = chance(0.7);
+      orderRows.push({
+        id: orderId,
+        clinicId,
+        patientId: consultation.patientId as string,
+        encounterId,
+        consultationId: consultation.id as string,
+        number: `PED-${year}-${String(seq).padStart(5, "0")}`,
+        category: exam.category,
+        name: exam.name,
+        code: exam.code,
+        codeSystem: "LOINC",
+        priority: chance(0.15) ? "URGENTE" : "ROTINA",
+        status: concluded ? "CONCLUIDO" : pick(["SOLICITADO", "AGENDADO", "EM_PROCESSAMENTO"]),
+        requestedAt: consultation.startedAt as Date,
+        doctorId: consultation.doctorId as string,
+        requestedById: medicoUser.id,
+      });
+
+      if (concluded) {
+        const resultId = randomUUID();
+        const performedAt = new Date((consultation.startedAt as Date).getTime() + 86400000);
+        resultRows.push({
+          id: resultId,
+          clinicId,
+          orderId,
+          performedAt,
+          validatedAt: performedAt,
+          conclusion: pick(["Sem alterações significativas.", "Valores dentro do intervalo de referência.", "Ligeira alteração — repetir em 30 dias."]),
+        });
+        const haemoglobin = Math.round((10 + Math.random() * 6) * 10) / 10;
+        resultItemRows.push(
+          { resultId, name: "Hemoglobina", value: String(haemoglobin), valueNumeric: haemoglobin, unit: "g/dL", referenceRange: "12,0–16,0", isAbnormal: haemoglobin < 12, flag: haemoglobin < 12 ? "BAIXO" : null },
+          { resultId, name: "Leucócitos", value: String(int(4000, 12000)), unit: "/µL", referenceRange: "4.000–11.000", isAbnormal: false },
+        );
+      }
+    }
+  }
+
+  for (const c of chunk(encounterRows, 1000)) await prisma.encounter.createMany({ data: c });
+  for (const c of chunk(vitalRows, 1000)) await prisma.vitalSign.createMany({ data: c });
+  for (const c of chunk(diagnosisRows, 1000)) await prisma.diagnosis.createMany({ data: c });
+  for (const c of chunk(prescriptionRows, 1000)) await prisma.prescription.createMany({ data: c });
+  for (const c of chunk(prescriptionItemRows, 1000)) await prisma.prescriptionItem.createMany({ data: c });
+  for (const c of chunk(orderRows, 1000)) await prisma.diagnosticOrder.createMany({ data: c });
+  for (const c of chunk(resultRows, 1000)) await prisma.diagnosticResult.createMany({ data: c });
+  for (const c of chunk(resultItemRows, 1000)) await prisma.diagnosticResultItem.createMany({ data: c });
+
+  // Liga cada consulta ao seu episódio.
+  for (const encounter of encounterRows) {
+    await prisma.consultation.updateMany({
+      where: { clinicId, patientId: encounter.patientId, startedAt: encounter.startedAt as Date },
+      data: { encounterId: encounter.id as string },
+    });
+  }
+
+  console.log(
+    `  ${encounterRows.length} episódios, ${allergyRows.length} alergias, ${prescriptionRows.length} receitas, ${orderRows.length} pedidos de exame`,
+  );
+
   // ── Notifications ─────────────────────────────────────────────────────────
   console.log("› Notificações e auditoria…");
   await prisma.notification.createMany({
@@ -534,6 +814,7 @@ async function main() {
 
   console.log("✔ Seed concluído.");
   console.log("  Login: admin@clinicamarianu.mz / pulso123");
+  console.log(`  Portal do paciente: ${patients[0].id} / ${demoPortalToken}`);
 }
 
 main()

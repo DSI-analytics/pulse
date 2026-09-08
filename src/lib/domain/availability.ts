@@ -1,4 +1,5 @@
 // Doctor availability & slot generation — pure functions (no DB, unit-testable).
+import { formatInTimeZone, fromZonedTime } from "date-fns-tz";
 
 export interface WeeklyRule {
   weekday: number; // 0=Sun … 6=Sat
@@ -33,11 +34,17 @@ export function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
-function atTime(day: Date, minutes: number): Date {
-  const d = new Date(day);
-  d.setHours(0, 0, 0, 0);
-  d.setMinutes(minutes);
-  return d;
+function atTime(day: Date, minutes: number, timeZone: string): Date {
+  if (timeZone === "UTC") {
+    const local = new Date(day);
+    local.setHours(0, 0, 0, 0);
+    local.setMinutes(minutes);
+    return local;
+  }
+  const date = formatInTimeZone(day, timeZone, "yyyy-MM-dd");
+  const hours = String(Math.floor(minutes / 60)).padStart(2, "0");
+  const mins = String(minutes % 60).padStart(2, "0");
+  return fromZonedTime(`${date}T${hours}:${mins}:00`, timeZone);
 }
 
 export function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
@@ -58,6 +65,7 @@ export function generateDaySlots(
   rule: WeeklyRule | undefined,
   exceptions: DayException[],
   busy: BusyInterval[],
+  timeZone = "UTC",
 ): Slot[] {
   // Full-day blocks remove availability entirely.
   if (exceptions.some((e) => e.type === "FOLGA" || e.type === "FERIAS")) return [];
@@ -91,8 +99,8 @@ export function generateDaySlots(
     // Skip ad-hoc blocks.
     if (blocks.some(([bs, be]) => s < be && bs < e)) continue;
 
-    const start = atTime(day, s);
-    const end = atTime(day, e);
+    const start = atTime(day, s, timeZone);
+    const end = atTime(day, e, timeZone);
     slots.push({ start, end, taken: hasConflict(busy, start, end) });
   }
   return slots;

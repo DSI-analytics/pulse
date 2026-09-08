@@ -1,6 +1,7 @@
 import "server-only";
 import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import type { ExpenseStatus, RevenueSource } from "@prisma/client";
 
 const PAYMENT_LABEL: Record<string, string> = {
   DINHEIRO: "Dinheiro",
@@ -11,7 +12,16 @@ const PAYMENT_LABEL: Record<string, string> = {
   SEGURADORA: "Seguradora",
 };
 
-export async function getFinanceData(clinicId: string) {
+export interface FinanceListFilters {
+  query?: string;
+  categoryId?: string;
+  expenseStatus?: ExpenseStatus;
+  revenueSource?: RevenueSource;
+  from?: Date;
+  to?: Date;
+}
+
+export async function getFinanceData(clinicId: string, filters: FinanceListFilters = {}) {
   const now = new Date();
   const mStart = startOfMonth(now);
   const mEnd = endOfMonth(now);
@@ -26,11 +36,25 @@ export async function getFinanceData(clinicId: string) {
       prisma.purchase.aggregate({ where: { clinicId, paymentStatus: { in: ["PENDENTE", "PARCIAL"] } }, _sum: { total: true } }),
       prisma.payment.groupBy({ by: ["method"], where: { clinicId, receivedAt: { gte: mStart, lte: mEnd } }, _sum: { amount: true } }),
       prisma.revenue.findMany({
-        where: { clinicId }, orderBy: { recognisedAt: "desc" }, take: 8,
+        where: {
+          clinicId,
+          ...(filters.query ? { OR: [
+            { description: { contains: filters.query, mode: "insensitive" } },
+            { patient: { name: { contains: filters.query, mode: "insensitive" } } },
+          ] } : {}),
+          ...(filters.revenueSource ? { source: filters.revenueSource } : {}),
+          ...(filters.from || filters.to ? { recognisedAt: { gte: filters.from, lte: filters.to } } : {}),
+        }, orderBy: { recognisedAt: "desc" }, take: 20,
         select: { id: true, description: true, amount: true, source: true, recognisedAt: true, method: true, patient: { select: { name: true } } },
       }),
       prisma.expense.findMany({
-        where: { clinicId }, orderBy: { incurredAt: "desc" }, take: 8,
+        where: {
+          clinicId,
+          ...(filters.query ? { description: { contains: filters.query, mode: "insensitive" } } : {}),
+          ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
+          ...(filters.expenseStatus ? { status: filters.expenseStatus } : {}),
+          ...(filters.from || filters.to ? { incurredAt: { gte: filters.from, lte: filters.to } } : {}),
+        }, orderBy: { incurredAt: "desc" }, take: 20,
         select: { id: true, description: true, amount: true, status: true, incurredAt: true, categoryId: true, method: true, category: { select: { name: true } } },
       }),
       prisma.revenue.findMany({ where: { clinicId, recognisedAt: { gte: startOfMonth(subMonths(now, 5)) } }, select: { amount: true, recognisedAt: true } }),

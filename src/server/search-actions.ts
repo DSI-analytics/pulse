@@ -1,6 +1,7 @@
 "use server";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
+import { patientSearchWhere } from "@/server/patient-search";
 
 export interface SearchHit {
   type: "Paciente" | "Médico" | "Fornecedor" | "Plano";
@@ -17,7 +18,7 @@ export async function globalSearch(query: string): Promise<SearchHit[]> {
 
   const [patients, doctors, suppliers, plans] = await Promise.all([
     prisma.patient.findMany({
-      where: { clinicId: user.clinicId, OR: [{ name: like }, { phone: { contains: q } }, { code: like }] },
+      where: patientSearchWhere(user.clinicId, q),
       take: 5,
       select: { id: true, name: true, code: true, phone: true },
     }),

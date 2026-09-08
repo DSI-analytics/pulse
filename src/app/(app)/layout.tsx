@@ -1,4 +1,5 @@
 import { requireUser } from "@/lib/auth";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { NAV_ITEMS } from "@/lib/nav";
 import { can, ROLE_LABELS } from "@/lib/rbac";
@@ -8,20 +9,17 @@ import { NovaMarcacao } from "@/components/nova-marcacao";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { NotificationsMenu, type NotificationView } from "@/components/notifications-menu";
+import { getVisibleNotifications } from "@/server/notifications";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
+  const initiallyCollapsed = (await cookies()).get("pulso-sidebar-collapsed")?.value === "true";
 
-  const [clinic, notifications, unread] = await Promise.all([
+  const [clinic, visible] = await Promise.all([
     prisma.clinic.findUnique({ where: { id: user.clinicId }, select: { name: true } }),
-    prisma.notification.findMany({
-      where: { clinicId: user.clinicId },
-      orderBy: { createdAt: "desc" },
-      take: 12,
-      select: { id: true, title: true, body: true, severity: true, createdAt: true },
-    }),
-    prisma.notification.count({ where: { clinicId: user.clinicId, isRead: false } }),
+    getVisibleNotifications(user),
   ]);
+  const { notifications, unread } = visible;
 
   const allowed = NAV_ITEMS.filter((i) => can(user.role, i.permission)).map((i) => i.href);
   const canBook = can(user.role, "appointment.manage");
@@ -36,7 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="flex min-h-screen bg-background">
-      <AppSidebar allowed={allowed} clinicName={clinic?.name ?? "Clínica"} />
+      <AppSidebar allowed={allowed} clinicName={clinic?.name ?? "Clínica"} initiallyCollapsed={initiallyCollapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-surface/80 px-4 backdrop-blur-md md:px-6">
           <div className="flex-1 md:flex-none">
@@ -50,7 +48,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <UserMenu name={user.name} roleLabel={ROLE_LABELS[user.role]} />
           </div>
         </header>
-        <main className="mx-auto w-full max-w-[1400px] flex-1 space-y-6 p-4 md:p-6 lg:p-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1400px] flex-1 space-y-3 p-4 md:p-6 lg:p-3">{children}</main>
       </div>
     </div>
   );

@@ -9,15 +9,24 @@ import { CadastroButton } from "@/components/cadastro-form";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { formatMZN } from "@/lib/money";
+import { ListFilters } from "@/components/list-filters";
 
-export default async function MedicosPage() {
+export default async function MedicosPage({ searchParams }: { searchParams: Promise<{ q?: string; especialidade?: string }> }) {
   const user = await requirePermission("doctor.view");
-  const doctors = await getDoctorCards(user.clinicId);
+  const canViewFinancials = can(user.role, "finance.view");
+  const sp = await searchParams;
+  const query = (sp.q ?? "").trim().toLocaleLowerCase("pt");
+  const allDoctors = await getDoctorCards(user.clinicId, canViewFinancials);
   const specialties = await prisma.specialty.findMany({
     where: { clinicId: user.clinicId },
     orderBy: { name: "asc" },
     select: { id: true, name: true },
   });
+  const selectedSpecialty = specialties.find((specialty) => specialty.id === sp.especialidade)?.name;
+  const doctors = allDoctors.filter((doctor) =>
+    (!query || doctor.name.toLocaleLowerCase("pt").includes(query))
+    && (!selectedSpecialty || doctor.specialty === selectedSpecialty),
+  );
   const canManage = can(user.role, "doctor.manage");
 
   return (
@@ -62,7 +71,13 @@ export default async function MedicosPage() {
         }
       />
 
+      <ListFilters action="/medicos" fields={[
+        { name: "q", label: "Pesquisar", value: sp.q?.trim(), type: "search", placeholder: "Nome do médico…" },
+        { name: "especialidade", label: "Especialidade", value: sp.especialidade, options: specialties.map((specialty) => ({ value: specialty.id, label: specialty.name })) },
+      ]} />
+
       <div className="space-y-3">
+        {doctors.length === 0 && <Card className="p-8 text-center text-sm text-muted-foreground">Nenhum médico corresponde aos filtros.</Card>}
         {doctors.map((d) => (
           <Link
             key={d.id}
@@ -88,10 +103,10 @@ export default async function MedicosPage() {
                     <p className="text-sm font-semibold tabular">{d.consultas}</p>
                     <p className="text-[11px] text-muted-foreground">Consultas</p>
                   </div>
-                  <div className="text-right">
+                  {canViewFinancials && <div className="text-right">
                     <p className="text-sm font-semibold tabular">{formatMZN(d.receita)}</p>
                     <p className="text-[11px] text-muted-foreground">Receita</p>
-                  </div>
+                  </div>}
                 </div>
               </div>
             </Card>

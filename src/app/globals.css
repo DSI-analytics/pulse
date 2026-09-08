@@ -153,3 +153,9 @@ h1, h2, h3, h4 {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
 }
+
+@media print {
+  body { background: white !important; color: black !important; }
+  aside, body > div > div > header { display: none !important; }
+  main { max-width: none !important; padding: 0 !important; }
+}

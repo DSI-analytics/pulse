@@ -1,19 +1,22 @@
 import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ROLE_LABELS } from "@/lib/rbac";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatMZN } from "@/lib/money";
+import { UserManagement } from "@/components/user-management";
 
 export default async function ConfiguracoesPage() {
   const user = await requirePermission("settings.manage");
 
-  const [clinic, settings, users, specialties] = await Promise.all([
+  const [clinic, settings, users, doctors, specialties] = await Promise.all([
     prisma.clinic.findUnique({ where: { id: user.clinicId }, include: { branches: true } }),
     prisma.clinicSettings.findUnique({ where: { clinicId: user.clinicId } }),
-    prisma.user.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" } }),
+    prisma.user.findMany({
+      where: { clinicId: user.clinicId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, email: true, role: true, isActive: true, lastLoginAt: true, doctor: { select: { id: true, name: true } } },
+    }),
+    prisma.doctor.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true, userId: true } }),
     prisma.specialty.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" } }),
   ]);
 
@@ -56,19 +59,12 @@ export default async function ConfiguracoesPage() {
       <Card>
         <CardHeader><CardTitle>Utilizadores</CardTitle><CardDescription>{users.length} utilizadores · controlo de acesso por perfil</CardDescription></CardHeader>
         <CardContent className="pt-0">
-          <Table>
-            <TableHeader><TableRow><TableHead>Nome</TableHead><TableHead>Email</TableHead><TableHead>Perfil</TableHead><TableHead>Estado</TableHead></TableRow></TableHeader>
-            <TableBody>
-              {users.map((u) => (
-                <TableRow key={u.id}>
-                  <TableCell className="font-medium">{u.name}</TableCell>
-                  <TableCell className="font-mono text-[13px] text-muted-foreground">{u.email}</TableCell>
-                  <TableCell><Badge variant="default">{ROLE_LABELS[u.role]}</Badge></TableCell>
-                  <TableCell><Badge variant={u.isActive ? "success" : "neutral"}>{u.isActive ? "Activo" : "Inactivo"}</Badge></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <UserManagement
+            users={users.map((u) => ({ ...u, lastLoginAt: u.lastLoginAt?.toISOString() ?? null }))}
+            doctors={doctors}
+            currentUserId={user.userId}
+            currentRole={user.role}
+          />
         </CardContent>
       </Card>
 

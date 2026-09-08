@@ -23,8 +23,14 @@ datasource db {
 enum UserRole {
   SUPER_ADMIN
   CLINIC_ADMIN
+  // Responsável de gestão de uma instituição: Insights + leitura operacional,
+  // sem privilégios administrativos globais.
+  CLINIC_MANAGER
   RECEPTIONIST
   DOCTOR
+  NURSE
+  LAB_TECHNICIAN
+  PHARMACIST
   FINANCE
   INVENTORY_MANAGER
 }
@@ -136,12 +142,193 @@ enum NotificationType {
   PAGAMENTO_SEGURADORA
   CAPACIDADE_MEDICO
   SISTEMA
+  CONSULTA_PROXIMA
+  RESULTADO_EXAME
+  ALERTA_CLINICO
+  TAREFA_PENDENTE
 }
 
 enum NotificationSeverity {
   INFO
   AVISO
   CRITICO
+}
+
+enum AuditResult {
+  SUCESSO
+  FALHA
+  NEGADO
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Prontuário clínico electrónico
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum MaritalStatus {
+  SOLTEIRO
+  CASADO
+  UNIAO_DE_FACTO
+  DIVORCIADO
+  VIUVO
+  OUTRO
+}
+
+enum BloodType {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+  DESCONHECIDO
+}
+
+enum IdentityDocumentType {
+  BI
+  PASSAPORTE
+  DIRE
+  NUIT
+  CARTA_CONDUCAO
+  CEDULA
+  OUTRO
+}
+
+enum EncounterType {
+  CONSULTA
+  URGENCIA
+  ACOMPANHAMENTO
+  INTERNAMENTO
+  PROCEDIMENTO
+  EXAME
+  ENCAMINHAMENTO
+}
+
+enum EncounterStatus {
+  PLANEADO
+  EM_CURSO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum VitalSignSource {
+  CONSULTA
+  TRIAGEM
+  INTERNAMENTO
+  DOMICILIO
+}
+
+enum DiagnosisKind {
+  PRINCIPAL
+  SECUNDARIO
+  DIFERENCIAL
+}
+
+enum DiagnosisCertainty {
+  PROVISORIO
+  CONFIRMADO
+  REFUTADO
+}
+
+enum AllergyCategory {
+  MEDICAMENTO
+  ALIMENTO
+  AMBIENTAL
+  BIOLOGICO
+  OUTRO
+}
+
+enum AllergyKind {
+  ALERGIA
+  INTOLERANCIA
+}
+
+enum AllergySeverity {
+  LEVE
+  MODERADA
+  GRAVE
+  FATAL
+}
+
+enum AllergyStatus {
+  ACTIVA
+  INACTIVA
+  RESOLVIDA
+  REFUTADA
+}
+
+enum PrescriptionStatus {
+  ACTIVA
+  CONCLUIDA
+  SUSPENSA
+  CANCELADA
+}
+
+enum MedicationRoute {
+  ORAL
+  INTRAVENOSA
+  INTRAMUSCULAR
+  SUBCUTANEA
+  TOPICA
+  INALATORIA
+  RECTAL
+  OFTALMICA
+  OTOLOGICA
+  NASAL
+  OUTRA
+}
+
+enum DiagnosticCategory {
+  LABORATORIO
+  IMAGIOLOGIA
+  OUTRO
+}
+
+enum DiagnosticPriority {
+  ROTINA
+  URGENTE
+  EMERGENTE
+}
+
+enum DiagnosticOrderStatus {
+  SOLICITADO
+  AGENDADO
+  RECOLHIDO
+  EM_PROCESSAMENTO
+  CONCLUIDO
+  CANCELADO
+}
+
+enum ProcedureStatus {
+  PLANEADO
+  REALIZADO
+  CANCELADO
+}
+
+enum TreatmentStatus {
+  PLANEADO
+  EM_CURSO
+  CONCLUIDO
+  SUSPENSO
+  CANCELADO
+}
+
+enum AdmissionStatus {
+  ADMITIDO
+  ALTA
+  TRANSFERIDO
+  OBITO
+}
+
+enum AttachmentCategory {
+  EXAME
+  RECEITA
+  RELATORIO
+  CONSENTIMENTO
+  IDENTIFICACAO
+  IMAGEM
+  OUTRO
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -164,31 +351,63 @@ model Clinic {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  branches            Branch[]
-  users               User[]
-  roles               Role[]
-  patients            Patient[]
-  doctors             Doctor[]
-  specialties         Specialty[]
-  appointments        Appointment[]
-  consultations       Consultation[]
-  insuranceCompanies  HealthInsuranceCompany[]
-  healthPlans         HealthPlan[]
-  patientHealthPlans  PatientHealthPlan[]
-  services            Service[]
-  invoices            Invoice[]
-  payments            Payment[]
-  revenues            Revenue[]
-  expenses            Expense[]
-  expenseCategories   ExpenseCategory[]
-  suppliers           Supplier[]
-  inventoryItems      InventoryItem[]
-  inventoryCategories InventoryCategory[]
-  inventoryMovements  InventoryMovement[]
-  purchases           Purchase[]
-  notifications       Notification[]
-  auditLogs           AuditLog[]
-  settings            ClinicSettings?
+  branches              Branch[]
+  users                 User[]
+  roles                 Role[]
+  patients              Patient[]
+  doctors               Doctor[]
+  specialties           Specialty[]
+  appointments          Appointment[]
+  consultations         Consultation[]
+  insuranceCompanies    HealthInsuranceCompany[]
+  healthPlans           HealthPlan[]
+  patientHealthPlans    PatientHealthPlan[]
+  services              Service[]
+  invoices              Invoice[]
+  payments              Payment[]
+  revenues              Revenue[]
+  expenses              Expense[]
+  expenseCategories     ExpenseCategory[]
+  suppliers             Supplier[]
+  inventoryItems        InventoryItem[]
+  inventoryCategories   InventoryCategory[]
+  inventoryMovements    InventoryMovement[]
+  purchases             Purchase[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  patientPortalAccesses PatientPortalAccess[]
+  userAccess            UserClinicAccess[]
+  identityDocuments     PatientIdentityDocument[]
+  encounters            Encounter[]
+  vitalSigns            VitalSign[]
+  diagnoses             Diagnosis[]
+  allergies             Allergy[]
+  medications           Medication[]
+  prescriptions         Prescription[]
+  diagnosticOrders      DiagnosticOrder[]
+  diagnosticResults     DiagnosticResult[]
+  clinicalProcedures    ClinicalProcedure[]
+  treatments            Treatment[]
+  admissions            Admission[]
+  clinicalAttachments   ClinicalAttachment[]
+  fhirResources         FhirResource[]
+  apiClients            ApiClient[]
+  settings              ClinicSettings?
+}
+
+// Explicit authorisation of a user over an institution beyond their home
+// clinic. A Gestor da Clínica only sees institutions listed here (plus their
+// own `user.clinicId`); isolation is always enforced server-side.
+model UserClinicAccess {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clinicId  String
+  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, clinicId])
+  @@index([clinicId])
 }
 
 model Branch {
@@ -203,6 +422,7 @@ model Branch {
 
   doctors      Doctor[]
   appointments Appointment[]
+  encounters   Encounter[]
 
   @@index([clinicId])
 }
@@ -220,27 +440,57 @@ model ClinicSettings {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  clinicId     String
-  clinic       Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  name         String
-  email        String
-  passwordHash String
-  role         UserRole
+  id             String    @id @default(cuid())
+  clinicId       String
+  clinic         Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name           String
+  email          String
+  passwordHash   String
+  sessionVersion Int       @default(0)
+  role           UserRole
   // Optional custom role (extensibility path for tenant-defined roles).
-  customRoleId String?
-  customRole   Role?     @relation(fields: [customRoleId], references: [id])
-  isActive     Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  customRoleId   String?
+  customRole     Role?     @relation(fields: [customRoleId], references: [id])
+  isActive       Boolean   @default(true)
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   doctor              Doctor?
   auditLogs           AuditLog[]
-  createdAppointments Appointment[] @relation("AppointmentCreatedBy")
+  createdAppointments Appointment[]       @relation("AppointmentCreatedBy")
+  passwordResetCodes  PasswordResetCode[]
+  clinicAccess        UserClinicAccess[]
+
+  createdPatients      Patient[]            @relation("PatientCreatedBy")
+  createdEncounters    Encounter[]          @relation("EncounterCreatedBy")
+  recordedVitalSigns   VitalSign[]          @relation("VitalSignRecordedBy")
+  recordedDiagnoses    Diagnosis[]          @relation("DiagnosisRecordedBy")
+  recordedAllergies    Allergy[]            @relation("AllergyRecordedBy")
+  createdPrescriptions Prescription[]       @relation("PrescriptionCreatedBy")
+  requestedOrders      DiagnosticOrder[]    @relation("DiagnosticOrderRequestedBy")
+  validatedResults     DiagnosticResult[]   @relation("DiagnosticResultValidatedBy")
+  recordedProcedures   ClinicalProcedure[]  @relation("ProcedureRecordedBy")
+  createdAdmissions    Admission[]          @relation("AdmissionCreatedBy")
+  uploadedAttachments  ClinicalAttachment[] @relation("AttachmentUploadedBy")
+  notifications        Notification[]
 
   @@unique([clinicId, email])
   @@index([clinicId])
+}
+
+model PasswordResetCode {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash   String
+  attempts   Int       @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
 }
 
 // Custom roles + permission catalog (architecture for future tenant-defined roles).
@@ -281,6 +531,7 @@ model Specialty {
   doctors      Doctor[]
   appointments Appointment[]
   revenues     Revenue[]
+  encounters   Encounter[]
 
   @@unique([clinicId, name])
   @@index([clinicId])
@@ -313,6 +564,14 @@ model Doctor {
   consultations          Consultation[]
   acceptedPlans          DoctorHealthPlan[]
   revenues               Revenue[]
+  encounters             Encounter[]
+  diagnoses              Diagnosis[]
+  allergies              Allergy[]
+  prescriptions          Prescription[]
+  diagnosticOrders       DiagnosticOrder[]
+  clinicalProcedures     ClinicalProcedure[]
+  treatments             Treatment[]
+  admissions             Admission[]
 
   @@index([clinicId])
   @@index([clinicId, specialtyId])
@@ -363,34 +622,137 @@ model DoctorHealthPlan {
 // Patients
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Cadastro único do paciente. `code` is the human-facing patient number and is
+/// unique per clinic; duplicate detection (see src/server/patient-matching.ts)
+/// additionally scores name + birth date + document + phone + e-mail.
 model Patient {
-  id                    String    @id @default(cuid())
-  clinicId              String
-  clinic                Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  code                  String // human patient id, e.g. "PAC-01042"
-  name                  String
-  birthDate             DateTime? @db.Date
-  gender                Gender?
-  phone                 String?
-  email                 String?
-  address               String?
-  emergencyContactName  String?
-  emergencyContactPhone String?
-  notes                 String?
-  registeredAt          DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id        String    @id @default(cuid())
+  clinicId  String
+  clinic    Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  code      String // human patient id, e.g. "PAC-01042"
+  name      String
+  birthDate DateTime? @db.Date
+  gender    Gender?
 
-  healthPlans   PatientHealthPlan[]
-  appointments  Appointment[]
-  consultations Consultation[]
-  invoices      Invoice[]
-  payments      Payment[]
-  revenues      Revenue[]
+  // Dados pessoais
+  genderIdentity    String?
+  maritalStatus     MaritalStatus?
+  nationality       String?
+  occupation        String?
+  photoUrl          String?
+  preferredLanguage String?
+
+  // Contactos
+  phone    String?
+  phoneAlt String?
+  email    String?
+
+  // Endereço — `address` mantém-se como texto livre (compatibilidade).
+  address          String?
+  country          String?
+  province         String?
+  district         String?
+  city             String?
+  neighbourhood    String?
+  street           String?
+  streetNumber     String?
+  addressReference String?
+
+  // Contacto de emergência
+  emergencyContactName     String?
+  emergencyContactRelation String?
+  emergencyContactPhone    String?
+  emergencyContactPhoneAlt String?
+
+  // Informação clínica geral
+  bloodType         BloodType?
+  chronicConditions String?
+  personalHistory   String?
+  surgicalHistory   String?
+  familyHistory     String?
+  habits            String?
+  clinicalSummary   String?
+
+  notes         String?
+  /// Inactivação em vez de eliminação física (§36).
+  isActive      Boolean   @default(true)
+  deactivatedAt DateTime?
+  /// Preenchido quando este registo foi fundido noutro (deduplicação).
+  mergedIntoId  String?
+  mergedInto    Patient?  @relation("PatientMerge", fields: [mergedIntoId], references: [id])
+  mergedFrom    Patient[] @relation("PatientMerge")
+  /// Optimistic locking — ver src/lib/concurrency.ts.
+  version       Int       @default(0)
+
+  registeredAt DateTime @default(now())
+  createdById  String?
+  createdBy    User?    @relation("PatientCreatedBy", fields: [createdById], references: [id])
+  updatedAt    DateTime @updatedAt
+
+  healthPlans       PatientHealthPlan[]
+  appointments      Appointment[]
+  consultations     Consultation[]
+  invoices          Invoice[]
+  payments          Payment[]
+  revenues          Revenue[]
+  portalAccess      PatientPortalAccess?
+  identityDocuments PatientIdentityDocument[]
+  encounters        Encounter[]
+  vitalSigns        VitalSign[]
+  diagnoses         Diagnosis[]
+  allergies         Allergy[]
+  prescriptions     Prescription[]
+  diagnosticOrders  DiagnosticOrder[]
+  procedures        ClinicalProcedure[]
+  treatments        Treatment[]
+  admissions        Admission[]
+  attachments       ClinicalAttachment[]
 
   @@unique([clinicId, code])
   @@index([clinicId])
   @@index([clinicId, name])
   @@index([clinicId, phone])
+  @@index([clinicId, email])
+  @@index([clinicId, birthDate])
+  @@index([clinicId, isActive])
+}
+
+/// Vários documentos de identificação por paciente.
+model PatientIdentityDocument {
+  id        String               @id @default(cuid())
+  clinicId  String
+  clinic    Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId String
+  patient   Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  type      IdentityDocumentType
+  number    String
+  issuer    String?
+  issuedAt  DateTime?            @db.Date
+  expiresAt DateTime?            @db.Date
+  isPrimary Boolean              @default(false)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@unique([clinicId, type, number])
+  @@index([patientId])
+  @@index([clinicId, number])
+}
+
+model PatientPortalAccess {
+  id         String    @id @default(cuid())
+  clinicId   String
+  clinic     Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId  String    @unique
+  patient    Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  isActive   Boolean   @default(true)
+  expiresAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([clinicId])
+  @@index([clinicId, isActive])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -469,8 +831,10 @@ model Service {
   basePrice Int           @default(150000) // centavos
   isActive  Boolean       @default(true)
 
-  invoiceItems InvoiceItem[]
-  appointments Appointment[]
+  invoiceItems       InvoiceItem[]
+  appointments       Appointment[]
+  diagnosticOrders   DiagnosticOrder[]
+  clinicalProcedures ClinicalProcedure[]
 
   @@unique([clinicId, name])
   @@index([clinicId])
@@ -511,6 +875,8 @@ model Appointment {
   cancelReason        String?
   createdById         String?
   createdBy           User?              @relation("AppointmentCreatedBy", fields: [createdById], references: [id])
+  encounterId         String?
+  encounter           Encounter?         @relation(fields: [encounterId], references: [id])
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
 
@@ -526,27 +892,50 @@ model Appointment {
 }
 
 model Consultation {
-  id            String      @id @default(cuid())
-  clinicId      String
-  clinic        Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  appointmentId String      @unique
-  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  patientId     String
-  patient       Patient     @relation(fields: [patientId], references: [id])
-  doctorId      String
-  doctor        Doctor      @relation(fields: [doctorId], references: [id])
-  startedAt     DateTime
-  endedAt       DateTime?
-  subjective    String? // complaint / history
-  notes         String? // clinical notes
-  diagnosis     String?
-  prescription  String?
-  followUpDate  DateTime?   @db.Date
-  createdAt     DateTime    @default(now())
+  id              String      @id @default(cuid())
+  clinicId        String
+  clinic          Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  appointmentId   String      @unique
+  appointment     Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patientId       String
+  patient         Patient     @relation(fields: [patientId], references: [id])
+  doctorId        String
+  doctor          Doctor      @relation(fields: [doctorId], references: [id])
+  encounterId     String?
+  encounter       Encounter?  @relation(fields: [encounterId], references: [id])
+  startedAt       DateTime
+  endedAt         DateTime?
+  subjective      String? // complaint / history
+  notes           String? // clinical notes
+  diagnosis       String?
+  prescription    String?
+  recommendations String?
+  followUpDate    DateTime?   @db.Date
+
+  // Registo clínico estruturado (SOAP alargado).
+  chiefComplaint          String?
+  historyOfPresentIllness String?
+  symptoms                String?
+  physicalExam            String?
+  assessment              String?
+  treatmentPlan           String?
+  referrals               String?
+
+  version   Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  vitalSigns       VitalSign[]
+  diagnoses        Diagnosis[]
+  prescriptions    Prescription[]
+  diagnosticOrders DiagnosticOrder[]
+  attachments      ClinicalAttachment[]
 
   @@index([clinicId])
   @@index([patientId])
   @@index([doctorId])
+  @@index([clinicId, patientId, startedAt])
+  @@index([encounterId])
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -598,20 +987,22 @@ model InvoiceItem {
 }
 
 model Payment {
-  id          String        @id @default(cuid())
-  clinicId    String
-  clinic      Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  invoiceId   String?
-  invoice     Invoice?      @relation(fields: [invoiceId], references: [id])
-  patientId   String?
-  patient     Patient?      @relation(fields: [patientId], references: [id])
-  amount      Int // centavos
-  method      PaymentMethod
-  reference   String? // M-Pesa/e-Mola tx id, etc.
-  fromInsurer Boolean       @default(false)
-  receivedAt  DateTime      @default(now())
-  createdAt   DateTime      @default(now())
+  id            String        @id @default(cuid())
+  clinicId      String
+  clinic        Clinic        @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  invoiceId     String?
+  invoice       Invoice?      @relation(fields: [invoiceId], references: [id])
+  patientId     String?
+  patient       Patient?      @relation(fields: [patientId], references: [id])
+  amount        Int // centavos
+  method        PaymentMethod
+  reference     String? // M-Pesa/e-Mola tx id, etc.
+  receiptNumber String?
+  fromInsurer   Boolean       @default(false)
+  receivedAt    DateTime      @default(now())
+  createdAt     DateTime      @default(now())
 
+  @@unique([clinicId, receiptNumber])
   @@index([clinicId])
   @@index([clinicId, receivedAt])
   @@index([invoiceId])
@@ -813,34 +1204,579 @@ model PurchaseItem {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Notification {
-  id        String               @id @default(cuid())
-  clinicId  String
-  clinic    Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  type      NotificationType
-  severity  NotificationSeverity @default(INFO)
-  title     String
-  body      String?
-  entity    String? // "Appointment", "InventoryItem"…
-  entityId  String?
-  isRead    Boolean              @default(false)
-  createdAt DateTime             @default(now())
+  id                 String               @id @default(cuid())
+  clinicId           String
+  clinic             Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  type               NotificationType
+  severity           NotificationSeverity @default(INFO)
+  title              String
+  body               String?
+  entity             String? // "Appointment", "InventoryItem"…
+  entityId           String?
+  /// Destinatário específico. `null` = visível a toda a clínica, sujeito a
+  /// `requiredPermission`.
+  userId             String?
+  user               User?                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Chave de permissão necessária para ver a notificação (ex.: "laboratory.view").
+  requiredPermission String?
+  isRead             Boolean              @default(false)
+  createdAt          DateTime             @default(now())
 
   @@index([clinicId, isRead])
   @@index([clinicId, createdAt])
+  @@index([userId, isRead])
 }
 
+/// Append-only audit trail. A database trigger (see migration
+/// `harden_audit_log_immutability`) rejects UPDATE and DELETE, so no
+/// application path — soft delete included — can rewrite history.
+/// Relations use `Restrict` on purpose: removing a clinic or user must not be
+/// able to erase its trail.
 model AuditLog {
-  id        String   @id @default(cuid())
-  clinicId  String
-  clinic    Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
-  action    String // "patient.create", "appointment.cancel"…
-  entity    String
-  entityId  String?
-  metadata  Json?
-  createdAt DateTime @default(now())
+  id         String      @id @default(cuid())
+  clinicId   String
+  clinic     Clinic      @relation(fields: [clinicId], references: [id], onDelete: Restrict)
+  userId     String?
+  user       User?       @relation(fields: [userId], references: [id], onDelete: Restrict)
+  /// Denormalised actor identity — survives renames and keeps the entry readable.
+  userName   String?
+  userRole   UserRole?
+  module     String? // "prontuario", "financeiro", "fhir", "auth"…
+  action     String // "patient.create", "appointment.cancel"…
+  entity     String
+  entityId   String?
+  /// Redacted snapshots of the record before/after the change.
+  before     Json?
+  after      Json?
+  result     AuditResult @default(SUCESSO)
+  ipAddress  String?
+  userAgent  String?
+  sessionId  String?
+  requestId  String?
+  endpoint   String?
+  httpMethod String?
+  metadata   Json?
+  createdAt  DateTime    @default(now())
 
   @@index([clinicId, createdAt])
   @@index([entity, entityId])
+  @@index([clinicId, action, createdAt])
+  @@index([clinicId, userId, createdAt])
+  @@index([clinicId, module, createdAt])
+  @@index([clinicId, result, createdAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Episódios clínicos e registo estruturado
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Episódio clínico: agrega uma ou várias actividades (consultas, urgências,
+/// exames, procedimentos, internamentos) sob o mesmo contexto assistencial.
+model Encounter {
+  id          String          @id @default(cuid())
+  clinicId    String
+  clinic      Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  branchId    String?
+  branch      Branch?         @relation(fields: [branchId], references: [id])
+  patientId   String
+  patient     Patient         @relation(fields: [patientId], references: [id])
+  doctorId    String?
+  doctor      Doctor?         @relation(fields: [doctorId], references: [id])
+  specialtyId String?
+  specialty   Specialty?      @relation(fields: [specialtyId], references: [id])
+  number      String
+  type        EncounterType   @default(CONSULTA)
+  status      EncounterStatus @default(EM_CURSO)
+  startedAt   DateTime        @default(now())
+  endedAt     DateTime?
+  reason      String?
+  summary     String?
+  outcome     String?
+  version     Int             @default(0)
+  createdById String?
+  createdBy   User?           @relation("EncounterCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  appointments     Appointment[]
+  consultations    Consultation[]
+  vitalSigns       VitalSign[]
+  diagnoses        Diagnosis[]
+  prescriptions    Prescription[]
+  diagnosticOrders DiagnosticOrder[]
+  procedures       ClinicalProcedure[]
+  treatments       Treatment[]
+  admissions       Admission[]
+  attachments      ClinicalAttachment[]
+
+  @@unique([clinicId, number])
+  @@index([clinicId, patientId, startedAt])
+  @@index([clinicId, status])
+  @@index([clinicId, startedAt])
+  @@index([doctorId])
+}
+
+model VitalSign {
+  id             String          @id @default(cuid())
+  clinicId       String
+  clinic         Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounterId    String?
+  encounter      Encounter?      @relation(fields: [encounterId], references: [id])
+  consultationId String?
+  consultation   Consultation?   @relation(fields: [consultationId], references: [id])
+  admissionId    String?
+  admission      Admission?      @relation(fields: [admissionId], references: [id])
+  source         VitalSignSource @default(CONSULTA)
+  recordedAt     DateTime        @default(now())
+  recordedById   String?
+  recordedBy     User?           @relation("VitalSignRecordedBy", fields: [recordedById], references: [id])
+
+  systolic         Int? // mmHg
+  diastolic        Int? // mmHg
+  heartRate        Int? // bpm
+  respiratoryRate  Int? // cpm
+  temperature      Float? // graus Celsius
+  oxygenSaturation Int? // %
+  weightKg         Float?
+  heightCm         Float?
+  bmi              Float? // calculado a partir de peso/altura
+  glucose          Float? // mg/dL
+  painScore        Int? // 0-10
+  /// Parametros adicionais configuraveis: { "chave": { "value": 1, "unit": "x" } }
+  extra            Json?
+  notes            String?
+
+  createdAt DateTime @default(now())
+
+  @@index([clinicId, patientId, recordedAt])
+  @@index([encounterId])
+  @@index([consultationId])
+}
+
+model Diagnosis {
+  id             String             @id @default(cuid())
+  clinicId       String
+  clinic         Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient            @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounterId    String?
+  encounter      Encounter?         @relation(fields: [encounterId], references: [id])
+  consultationId String?
+  consultation   Consultation?      @relation(fields: [consultationId], references: [id])
+  kind           DiagnosisKind      @default(PRINCIPAL)
+  certainty      DiagnosisCertainty @default(PROVISORIO)
+  /// Terminologia clinica normalizada - preparado para ICD-10/CID e SNOMED CT.
+  code           String?
+  codeSystem     String? // "ICD-10", "SNOMED-CT", "CID-10"
+  description    String
+  onsetDate      DateTime?          @db.Date
+  recordedAt     DateTime           @default(now())
+  doctorId       String?
+  doctor         Doctor?            @relation(fields: [doctorId], references: [id])
+  recordedById   String?
+  recordedBy     User?              @relation("DiagnosisRecordedBy", fields: [recordedById], references: [id])
+  notes          String?
+  isActive       Boolean            @default(true)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([clinicId, patientId, recordedAt])
+  @@index([clinicId, code])
+  @@index([encounterId])
+}
+
+model Allergy {
+  id           String          @id @default(cuid())
+  clinicId     String
+  clinic       Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId    String
+  patient      Patient         @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  substance    String
+  /// Chave normalizada (minusculas, sem acentos) usada na verificacao de
+  /// conflitos com prescricoes - ver src/lib/domain/allergy-check.ts.
+  substanceKey String
+  code         String?
+  codeSystem   String?
+  category     AllergyCategory @default(MEDICAMENTO)
+  kind         AllergyKind     @default(ALERGIA)
+  reaction     String?
+  severity     AllergySeverity @default(MODERADA)
+  status       AllergyStatus   @default(ACTIVA)
+  identifiedAt DateTime?       @db.Date
+  doctorId     String?
+  doctor       Doctor?         @relation(fields: [doctorId], references: [id])
+  recordedById String?
+  recordedBy   User?           @relation("AllergyRecordedBy", fields: [recordedById], references: [id])
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([clinicId, patientId, status])
+  @@index([clinicId, substanceKey])
+}
+
+/// Catalogo de medicamentos da instituicao. Alimenta a verificacao estruturada
+/// entre prescricao e alergias - nunca substitui uma base farmacologica validada.
+model Medication {
+  id               String   @id @default(cuid())
+  clinicId         String
+  clinic           Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name             String
+  activeIngredient String?
+  form             String? // comprimido, suspensao, ampola
+  strength         String? // "500 mg"
+  code             String?
+  codeSystem       String? // "ATC", "SNOMED-CT"
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  prescriptionItems PrescriptionItem[]
+
+  @@unique([clinicId, name])
+  @@index([clinicId, activeIngredient])
+}
+
+model Prescription {
+  id             String             @id @default(cuid())
+  clinicId       String
+  clinic         Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient            @relation(fields: [patientId], references: [id])
+  encounterId    String?
+  encounter      Encounter?         @relation(fields: [encounterId], references: [id])
+  consultationId String?
+  consultation   Consultation?      @relation(fields: [consultationId], references: [id])
+  doctorId       String?
+  doctor         Doctor?            @relation(fields: [doctorId], references: [id])
+  number         String
+  status         PrescriptionStatus @default(ACTIVA)
+  issuedAt       DateTime           @default(now())
+  validUntil     DateTime?          @db.Date
+  notes          String?
+  /// Prescricao que esta substitui. Uma prescricao antiga nunca e apagada nem
+  /// alterada silenciosamente - e suspensa e referenciada aqui (secao 5).
+  replacesId     String?            @unique
+  replaces       Prescription?      @relation("PrescriptionSupersede", fields: [replacesId], references: [id])
+  replacedBy     Prescription?      @relation("PrescriptionSupersede")
+  cancelReason   String?
+  version        Int                @default(0)
+  createdById    String?
+  createdBy      User?              @relation("PrescriptionCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  items       PrescriptionItem[]
+  attachments ClinicalAttachment[]
+
+  @@unique([clinicId, number])
+  @@index([clinicId, patientId, issuedAt])
+  @@index([clinicId, status])
+  @@index([encounterId])
+}
+
+model PrescriptionItem {
+  id               String             @id @default(cuid())
+  prescriptionId   String
+  prescription     Prescription       @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
+  medicationId     String?
+  medication       Medication?        @relation(fields: [medicationId], references: [id])
+  medicationName   String
+  activeIngredient String?
+  dose             String?
+  doseUnit         String?
+  route            MedicationRoute?
+  frequency        String?
+  durationDays     Int?
+  quantity         String?
+  instructions     String?
+  status           PrescriptionStatus @default(ACTIVA)
+  /// Alertas de alergia apresentados ao prescritor no momento da emissao.
+  allergyWarnings  Json?
+  createdAt        DateTime           @default(now())
+
+  @@index([prescriptionId])
+}
+
+model DiagnosticOrder {
+  id             String                @id @default(cuid())
+  clinicId       String
+  clinic         Clinic                @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId      String
+  patient        Patient               @relation(fields: [patientId], references: [id])
+  encounterId    String?
+  encounter      Encounter?            @relation(fields: [encounterId], references: [id])
+  consultationId String?
+  consultation   Consultation?         @relation(fields: [consultationId], references: [id])
+  serviceId      String?
+  service        Service?              @relation(fields: [serviceId], references: [id])
+  number         String
+  category       DiagnosticCategory    @default(LABORATORIO)
+  name           String
+  code           String?
+  codeSystem     String?
+  priority       DiagnosticPriority    @default(ROTINA)
+  status         DiagnosticOrderStatus @default(SOLICITADO)
+  requestedAt    DateTime              @default(now())
+  scheduledAt    DateTime?
+  collectedAt    DateTime?
+  doctorId       String?
+  doctor         Doctor?               @relation(fields: [doctorId], references: [id])
+  requestedById  String?
+  requestedBy    User?                 @relation("DiagnosticOrderRequestedBy", fields: [requestedById], references: [id])
+  notes          String?
+  cancelReason   String?
+  version        Int                   @default(0)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  result      DiagnosticResult?
+  attachments ClinicalAttachment[]
+
+  @@unique([clinicId, number])
+  @@index([clinicId, patientId, requestedAt])
+  @@index([clinicId, status])
+  @@index([encounterId])
+}
+
+model DiagnosticResult {
+  id            String          @id @default(cuid())
+  clinicId      String
+  clinic        Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  orderId       String          @unique
+  order         DiagnosticOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  conclusion    String?
+  notes         String?
+  performedAt   DateTime?
+  performedBy   String?
+  validatedAt   DateTime?
+  validatedById String?
+  validatedBy   User?           @relation("DiagnosticResultValidatedBy", fields: [validatedById], references: [id])
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  items DiagnosticResultItem[]
+
+  @@index([clinicId, performedAt])
+}
+
+model DiagnosticResultItem {
+  id             String           @id @default(cuid())
+  resultId       String
+  result         DiagnosticResult @relation(fields: [resultId], references: [id], onDelete: Cascade)
+  name           String
+  code           String?
+  codeSystem     String?
+  value          String?
+  valueNumeric   Float?
+  unit           String?
+  referenceRange String?
+  isAbnormal     Boolean          @default(false)
+  flag           String? // "ALTO", "BAIXO", "CRITICO"
+  notes          String?
+
+  @@index([resultId])
+}
+
+model ClinicalProcedure {
+  id            String          @id @default(cuid())
+  clinicId      String
+  clinic        Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient         @relation(fields: [patientId], references: [id])
+  encounterId   String?
+  encounter     Encounter?      @relation(fields: [encounterId], references: [id])
+  admissionId   String?
+  admission     Admission?      @relation(fields: [admissionId], references: [id])
+  serviceId     String?
+  service       Service?        @relation(fields: [serviceId], references: [id])
+  name          String
+  code          String?
+  codeSystem    String?
+  status        ProcedureStatus @default(REALIZADO)
+  performedAt   DateTime        @default(now())
+  doctorId      String?
+  doctor        Doctor?         @relation(fields: [doctorId], references: [id])
+  description   String?
+  outcome       String?
+  complications String?
+  notes         String?
+  recordedById  String?
+  recordedBy    User?           @relation("ProcedureRecordedBy", fields: [recordedById], references: [id])
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  attachments ClinicalAttachment[]
+
+  @@index([clinicId, patientId, performedAt])
+  @@index([encounterId])
+}
+
+model Treatment {
+  id          String          @id @default(cuid())
+  clinicId    String
+  clinic      Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId   String
+  patient     Patient         @relation(fields: [patientId], references: [id])
+  encounterId String?
+  encounter   Encounter?      @relation(fields: [encounterId], references: [id])
+  name        String
+  plan        String?
+  startedAt   DateTime        @default(now())
+  endedAt     DateTime?
+  doctorId    String?
+  doctor      Doctor?         @relation(fields: [doctorId], references: [id])
+  status      TreatmentStatus @default(EM_CURSO)
+  evolution   String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([clinicId, patientId, startedAt])
+  @@index([encounterId])
+}
+
+model Admission {
+  id                       String          @id @default(cuid())
+  clinicId                 String
+  clinic                   Clinic          @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId                String
+  patient                  Patient         @relation(fields: [patientId], references: [id])
+  encounterId              String?
+  encounter                Encounter?      @relation(fields: [encounterId], references: [id])
+  number                   String
+  admittedAt               DateTime        @default(now())
+  reason                   String?
+  ward                     String?
+  room                     String?
+  bed                      String?
+  doctorId                 String?
+  doctor                   Doctor?         @relation(fields: [doctorId], references: [id])
+  diagnosis                String?
+  evolution                String?
+  dischargedAt             DateTime?
+  dischargeSummary         String?
+  dischargeRecommendations String?
+  status                   AdmissionStatus @default(ADMITIDO)
+  version                  Int             @default(0)
+  createdById              String?
+  createdBy                User?           @relation("AdmissionCreatedBy", fields: [createdById], references: [id])
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  vitalSigns  VitalSign[]
+  procedures  ClinicalProcedure[]
+  attachments ClinicalAttachment[]
+
+  @@unique([clinicId, number])
+  @@index([clinicId, patientId, admittedAt])
+  @@index([clinicId, status])
+}
+
+/// Documentos clinicos. O ficheiro nunca e servido a partir de uma URL publica:
+/// o conteudo vive fora de /public e e entregue por /api/documentos/[id], que
+/// revalida sessao, permissao e clinica antes de responder.
+model ClinicalAttachment {
+  id                String             @id @default(cuid())
+  clinicId          String
+  clinic            Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId         String?
+  patient           Patient?           @relation(fields: [patientId], references: [id])
+  encounterId       String?
+  encounter         Encounter?         @relation(fields: [encounterId], references: [id])
+  consultationId    String?
+  consultation      Consultation?      @relation(fields: [consultationId], references: [id])
+  diagnosticOrderId String?
+  diagnosticOrder   DiagnosticOrder?   @relation(fields: [diagnosticOrderId], references: [id])
+  admissionId       String?
+  admission         Admission?         @relation(fields: [admissionId], references: [id])
+  procedureId       String?
+  procedure         ClinicalProcedure? @relation(fields: [procedureId], references: [id])
+  prescriptionId    String?
+  prescription      Prescription?      @relation(fields: [prescriptionId], references: [id])
+
+  name         String
+  description  String?
+  category     AttachmentCategory @default(OUTRO)
+  mimeType     String
+  sizeBytes    Int
+  /// Caminho relativo dentro de PULSO_UPLOAD_DIR - nunca uma URL publica.
+  storageKey   String             @unique
+  checksum     String?
+  authorName   String?
+  documentDate DateTime?
+  uploadedById String?
+  uploadedBy   User?              @relation("AttachmentUploadedBy", fields: [uploadedById], references: [id])
+  /// Soft delete controlado: o ficheiro sai da vista clinica mas o rasto
+  /// permanece auditavel (secao 36).
+  deletedAt    DateTime?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([clinicId, patientId, createdAt])
+  @@index([encounterId])
+  @@index([diagnosticOrderId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interoperabilidade (HL7 FHIR) e clientes de API
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Registo de identidade FHIR. Os sistemas externos nunca recebem o id interno
+/// da base de dados: cada recurso exposto tem um `fhirId` proprio, estavel e
+/// opaco, ligado ao modelo interno correspondente. Guarda tambem versionId /
+/// lastUpdated (meta) e identificadores de sistemas terceiros.
+model FhirResource {
+  id                  String   @id @default(cuid())
+  clinicId            String
+  clinic              Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  resourceType        String // "Patient", "Encounter", "Observation"
+  fhirId              String
+  internalModel       String // "Patient", "VitalSign", "Diagnosis"
+  internalId          String
+  versionId           Int      @default(1)
+  lastUpdated         DateTime @default(now())
+  /// Identificadores externos: [{ "system": "...", "value": "..." }]
+  externalIdentifiers Json?
+  createdAt           DateTime @default(now())
+
+  @@unique([resourceType, fhirId])
+  @@unique([internalModel, internalId])
+  @@index([clinicId, resourceType])
+  @@index([clinicId, lastUpdated])
+}
+
+/// Aplicacao externa autorizada a consumir a API FHIR. O token e guardado
+/// apenas como hash SHA-256; os scopes limitam as operacoes permitidas.
+model ApiClient {
+  id         String    @id @default(cuid())
+  clinicId   String
+  clinic     Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  name       String
+  tokenHash  String    @unique
+  /// Scopes no espirito SMART on FHIR: "system/Patient.read", "system/*.read".
+  scopes     String[]
+  isActive   Boolean   @default(true)
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([clinicId, name])
+  @@index([clinicId, isActive])
+}
+
+/// Tentativas de autenticacao — suporta bloqueio por forca bruta e auditoria
+/// de acessos falhados sem revelar se a conta existe.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  ipAddress String?
+  success   Boolean  @default(false)
+  userId    String?
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([ipAddress, createdAt])
 }

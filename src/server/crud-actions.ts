@@ -1,5 +1,4 @@
 "use server";
-import { z } from "zod";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
@@ -7,7 +6,8 @@ import { requireUser } from "@/lib/auth";
 import { can, type Permission } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { parseMZN } from "@/lib/money";
-import { normalizePatientData } from "@/server/patient-data";
+import type { PatientProfileValues } from "@/server/patient-data";
+import { createPatientProfile, updatePatientProfile } from "@/server/patient-registry";
 
 type Values = Record<string, string>;
 type Result = { ok: true; id?: string } | { error: string };
@@ -21,94 +21,59 @@ async function guard(permission: Permission): Promise<{ clinicId: string; userId
 const nonEmpty = (v?: string) => (v ?? "").trim();
 
 // ── Patient ──────────────────────────────────────────────────────────────
+// O cadastro vive em src/server/patient-registry.ts (detecção de duplicados,
+// perfil alargado, documentos, fusão). Estas funções mantêm-se como a API
+// usada pelos formulários existentes e delegam nesse serviço — sem duplicar
+// regras de validação nem de auditoria.
+
 export async function createPatientRecord(values: Values): Promise<Result> {
-  const g = await guard("patient.manage");
-  if ("error" in g) return g;
-  const schema = z.object({ name: z.string().min(3, "Nome demasiado curto.") });
-  const parsed = schema.safeParse({ name: nonEmpty(values.name) });
-  if (!parsed.success) return { error: parsed.error.issues[0].message };
-
-  const count = await prisma.patient.count({ where: { clinicId: g.clinicId } });
-  const code = `PAC-${String(count + 1).padStart(5, "0")}`;
-  const normalized = normalizePatientData(values);
-
-  const p = await prisma.patient.create({
-    data: {
-      clinicId: g.clinicId,
-      code,
-      ...normalized,
-    },
-    select: { id: true },
-  });
-  await audit({ clinicId: g.clinicId, userId: g.userId, action: "patient.create", entity: "Patient", entityId: p.id });
-  revalidatePath("/pacientes");
-  return { ok: true, id: p.id };
+  const result = await createPatientProfile(values as PatientProfileValues);
+  return "error" in result ? result : { ok: true, id: result.id };
 }
 
 export async function updatePatientRecord(patientId: string, values: Values): Promise<Result> {
-  const g = await guard("patient.manage");
-  if ("error" in g) return g;
-
-  const patient = await prisma.patient.findFirst({
-    where: { id: patientId, clinicId: g.clinicId },
-    select: { id: true },
-  });
-
-  if (!patient) return { error: "Paciente não encontrado." };
-
-  try {
-    const normalized = normalizePatientData(values);
-    await prisma.patient.update({
-      where: { id: patient.id },
-      data: {
-        name: normalized.name,
-        phone: normalized.phone,
-        email: normalized.email,
-        address: normalized.address,
-        gender: normalized.gender,
-        birthDate: normalized.birthDate,
-        emergencyContactName: normalized.emergencyContactName,
-        emergencyContactPhone: normalized.emergencyContactPhone,
-      },
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Dados inválidos.";
-    return { error: message };
-  }
-
-  await audit({ clinicId: g.clinicId, userId: g.userId, action: "patient.update", entity: "Patient", entityId: patient.id });
-  revalidatePath("/pacientes");
-  revalidatePath(`/pacientes/${patientId}`);
-  return { ok: true, id: patient.id };
+  const result = await updatePatientProfile(patientId, values as PatientProfileValues);
+  return "error" in result ? result : { ok: true, id: result.id };
 }
 
+/**
+ * Inactiva o paciente (§36 — nunca DELETE físico de dados clínicos).
+ *
+ * O histórico clínico, as marcações e a facturação permanecem intactos e
+ * auditáveis; o registo deixa de aparecer nas listas e na pesquisa. Para
+ * consolidar dois registos da mesma pessoa use `mergePatients`.
+ */
 export async function deletePatientRecord(patientId: string): Promise<Result> {
   const g = await guard("patient.manage");
   if ("error" in g) return g;
 
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, clinicId: g.clinicId },
-    select: { id: true },
+    select: { id: true, code: true, name: true, isActive: true },
+  });
+  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient.isActive) return { error: "Este paciente já está inactivo." };
+
+  const upcoming = await prisma.appointment.count({
+    where: { clinicId: g.clinicId, patientId: patient.id, startAt: { gte: new Date() }, status: { in: ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA", "EM_CONSULTA"] } },
+  });
+  if (upcoming > 0) return { error: "Cancele primeiro as marcações futuras deste paciente." };
+
+  await prisma.patient.update({
+    where: { id: patient.id },
+    data: { isActive: false, deactivatedAt: new Date(), version: { increment: 1 } },
   });
 
-  if (!patient) return { error: "Paciente não encontrado." };
-
-  try {
-    await prisma.$transaction(async (tx) => {
-      await tx.payment.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
-      await tx.revenue.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
-      await tx.invoice.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
-      await tx.consultation.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
-      await tx.appointment.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
-      await tx.patientHealthPlan.deleteMany({ where: { patientId: patient.id, clinicId: g.clinicId } });
-      await tx.patient.delete({ where: { id: patient.id, clinicId: g.clinicId } });
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Não foi possível apagar o paciente.";
-    return { error: message };
-  }
-
-  await audit({ clinicId: g.clinicId, userId: g.userId, action: "patient.delete", entity: "Patient", entityId: patient.id });
+  await audit({
+    clinicId: g.clinicId,
+    userId: g.userId,
+    action: "patient.deactivate",
+    entity: "Patient",
+    entityId: patient.id,
+    before: { isActive: true },
+    after: { isActive: false },
+    metadata: { code: patient.code },
+  });
   revalidatePath("/pacientes");
   revalidatePath(`/pacientes/${patientId}`);
   redirect("/pacientes");

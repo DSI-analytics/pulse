@@ -57,16 +57,16 @@ export function EditPatientButton({
   });
 
   React.useEffect(() => {
-    setValues({
-      name: patient.name,
-      phone: patient.phone ?? "",
-      email: patient.email ?? "",
-      address: patient.address ?? "",
-      birthDate: formatDateInput(patient.birthDate),
-      gender: patient.gender ?? "",
-      emergencyContactName: patient.emergencyContactName ?? "",
-      emergencyContactPhone: patient.emergencyContactPhone ?? "",
-    });
+    setTimeout(() => setValues({
+        name: patient.name,
+        phone: patient.phone ?? "",
+        email: patient.email ?? "",
+        address: patient.address ?? "",
+        birthDate: formatDateInput(patient.birthDate),
+        gender: patient.gender ?? "",
+        emergencyContactName: patient.emergencyContactName ?? "",
+        emergencyContactPhone: patient.emergencyContactPhone ?? "",
+      }), 0);
   }, [patient]);
 
   async function submit() {

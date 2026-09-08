@@ -12,6 +12,7 @@ import {
   BarChart3,
   Sparkles,
   Settings,
+  ScrollText,
   type LucideIcon,
 } from "lucide-react";
 import type { Permission } from "./rbac";
@@ -36,6 +37,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Stock", href: "/stock", icon: Package, permission: "inventory.view", group: "Gestão" },
   { label: "Fornecedores", href: "/fornecedores", icon: Truck, permission: "supplier.view", group: "Gestão" },
   { label: "Relatórios", href: "/relatorios", icon: BarChart3, permission: "report.view", group: "Gestão" },
-  { label: "Insights", href: "/insights", icon: Sparkles, permission: "dashboard.view", group: "Gestão" },
+  { label: "Insights", href: "/insights", icon: Sparkles, permission: "insights.view", group: "Gestão" },
+  { label: "Auditoria", href: "/auditoria", icon: ScrollText, permission: "audit.view", group: "Sistema" },
   { label: "Configurações", href: "/configuracoes", icon: Settings, permission: "settings.manage", group: "Sistema" },
 ];

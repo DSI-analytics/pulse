@@ -57,7 +57,7 @@ const ACTIVE = new Set([
 ]);
 
 export function computeOccupancy(input: OccupancyInput): OccupancyMetrics {
-  const { availableMinutes, availableSlots, slotMinutes, appointments, distinctDays } = input;
+  const { availableMinutes, availableSlots, appointments, distinctDays } = input;
 
   const scheduledAppts = appointments.filter((a) => a.status !== "CANCELADA");
   const active = appointments.filter((a) => ACTIVE.has(a.status));

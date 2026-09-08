@@ -1,4 +1,5 @@
-import { Wallet, TrendingDown, TrendingUp, Percent, ArrowDownLeft, ArrowUpRight, Receipt } from "lucide-react";
+import Link from "next/link";
+import { Wallet, TrendingDown, TrendingUp, Percent, ArrowDownLeft, ArrowUpRight, Receipt, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
@@ -15,14 +16,93 @@ import { BarList } from "@/components/bar-list";
 import { TrendChart } from "@/components/charts/trend-chart";
 import { formatMZN } from "@/lib/money";
 import { formatDateShort } from "@/lib/datetime";
+import { ListFilters } from "@/components/list-filters";
+import type { ExpenseStatus, InvoiceStatus, RevenueSource } from "@prisma/client";
+import { reconcileBilling } from "@/lib/domain/billing";
+import { InvoicePaymentButton } from "@/components/invoice-payment-button";
 
-export default async function FinanceiroPage() {
+const EXPENSE_STATUSES: ExpenseStatus[] = ["PENDENTE", "PAGA", "ANULADA"];
+const REVENUE_SOURCES: RevenueSource[] = ["CONSULTA", "PROCEDIMENTO", "EXAME", "PRODUTO", "SEGURADORA", "PRIVADO", "OUTRO"];
+const INVOICE_STATUSES: InvoiceStatus[] = ["EMITIDA", "PARCIAL", "PAGA", "ANULADA"];
+
+function filterDate(value: string | undefined, end = false) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined;
+  const date = new Date(`${value}T${end ? "23:59:59.999" : "00:00:00"}`);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+export default async function FinanceiroPage({ searchParams }: { searchParams: Promise<{ q?: string; categoria?: string; estado?: string; origem?: string; de?: string; ate?: string; fatura?: string; seguradora?: string }> }) {
   const user = await requirePermission("finance.view");
-  const [d, expenseCategories] = await Promise.all([
-    getFinanceData(user.clinicId),
+  const sp = await searchParams;
+  const query = (sp.q ?? "").trim();
+  const expenseStatus = EXPENSE_STATUSES.includes(sp.estado as ExpenseStatus) ? sp.estado as ExpenseStatus : undefined;
+  const revenueSource = REVENUE_SOURCES.includes(sp.origem as RevenueSource) ? sp.origem as RevenueSource : undefined;
+  const invoiceStatus = INVOICE_STATUSES.includes(sp.fatura as InvoiceStatus) ? sp.fatura as InvoiceStatus : undefined;
+  const [d, expenseCategories, invoices, insurers, insuredInvoices] = await Promise.all([
+    getFinanceData(user.clinicId, {
+      query,
+      categoryId: sp.categoria,
+      expenseStatus,
+      revenueSource,
+      from: filterDate(sp.de),
+      to: filterDate(sp.ate, true),
+    }),
     prisma.expenseCategory.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.invoice.findMany({
+      where: {
+        clinicId: user.clinicId,
+        ...(query ? { OR: [
+          { number: { contains: query, mode: "insensitive" } },
+          { patient: { name: { contains: query, mode: "insensitive" } } },
+        ] } : {}),
+        ...(invoiceStatus ? { status: invoiceStatus } : { status: { not: "RASCUNHO" } }),
+        ...(sp.seguradora ? { healthPlan: { insuranceCompanyId: sp.seguradora } } : {}),
+      },
+      orderBy: { issuedAt: "desc" },
+      take: 50,
+      select: {
+        id: true, number: true, status: true, total: true, patientDue: true, insurerDue: true,
+        amountPaid: true, issuedAt: true, dueAt: true,
+        patient: { select: { name: true, code: true } },
+        healthPlan: { select: { name: true, insuranceCompany: { select: { id: true, name: true } } } },
+        items: { select: { id: true, description: true, quantity: true, total: true } },
+        payments: { orderBy: { receivedAt: "desc" }, select: { id: true, amount: true, fromInsurer: true, receiptNumber: true, receivedAt: true } },
+        appointment: { select: { revenue: { select: { amount: true, status: true } } } },
+      },
+    }),
+    prisma.healthInsuranceCompany.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.invoice.findMany({
+      where: { clinicId: user.clinicId, healthPlanId: { not: null }, status: { notIn: ["RASCUNHO", "ANULADA"] } },
+      select: {
+        insurerDue: true,
+        healthPlan: { select: { insuranceCompany: { select: { id: true, name: true } } } },
+        payments: { where: { fromInsurer: true }, select: { amount: true } },
+      },
+    }),
   ]);
   const k = d.kpis;
+  const invoiceRows = invoices.map((invoice) => {
+    const patientPaid = invoice.payments.filter((payment) => !payment.fromInsurer).reduce((sum, payment) => sum + payment.amount, 0);
+    const insurerPaid = invoice.payments.filter((payment) => payment.fromInsurer).reduce((sum, payment) => sum + payment.amount, 0);
+    const reconciliation = reconcileBilling({ patientDue: invoice.patientDue, insurerDue: invoice.insurerDue, patientPaid, insurerPaid });
+    const revenue = invoice.appointment?.revenue;
+    const reconciled = invoice.amountPaid === reconciliation.amountPaid
+      && invoice.status === reconciliation.invoiceStatus
+      && (!revenue || (revenue.amount === invoice.total && revenue.status === reconciliation.revenueStatus));
+    return { invoice, reconciliation, reconciled };
+  });
+  const insurerAccounts = Array.from(insuredInvoices.reduce((map, invoice) => {
+    const insurer = invoice.healthPlan?.insuranceCompany;
+    if (!insurer) return map;
+    const current = map.get(insurer.id) ?? { id: insurer.id, name: insurer.name, invoices: 0, billed: 0, paid: 0, outstanding: 0 };
+    const paid = invoice.payments.reduce((sum, payment) => sum + payment.amount, 0);
+    current.invoices += 1;
+    current.billed += invoice.insurerDue;
+    current.paid += paid;
+    current.outstanding += Math.max(0, invoice.insurerDue - paid);
+    map.set(insurer.id, current);
+    return map;
+  }, new Map<string, { id: string; name: string; invoices: number; billed: number; paid: number; outstanding: number }>()).values()).sort((a, b) => b.outstanding - a.outstanding);
 
   return (
     <>
@@ -82,6 +162,52 @@ export default async function FinanceiroPage() {
         </Card>
       </div>
 
+      <ListFilters action="/financeiro" fields={[
+        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Descrição ou paciente…" },
+        { name: "categoria", label: "Categoria da despesa", value: sp.categoria, options: expenseCategories.map((category) => ({ value: category.id, label: category.name })) },
+        { name: "estado", label: "Estado da despesa", value: expenseStatus, options: EXPENSE_STATUSES.map((value) => ({ value, label: value })) },
+        { name: "origem", label: "Origem da receita", value: revenueSource, options: REVENUE_SOURCES.map((value) => ({ value, label: value })) },
+        { name: "fatura", label: "Estado da fatura", value: invoiceStatus, options: INVOICE_STATUSES.map((value) => ({ value, label: value })) },
+        { name: "seguradora", label: "Seguradora", value: sp.seguradora, options: insurers.map((insurer) => ({ value: insurer.id, label: insurer.name })) },
+        { name: "de", label: "Data inicial", value: sp.de, type: "date" },
+        { name: "ate", label: "Data final", value: sp.ate, type: "date" },
+      ]} />
+
+      <Card>
+        <CardHeader><CardTitle>Faturas e contas a receber</CardTitle><CardDescription>{invoiceRows.length} faturas · pagamentos de pacientes e seguradoras</CardDescription></CardHeader>
+        <CardContent className="pt-0">
+          <Table>
+            <TableHeader><TableRow><TableHead>Fatura</TableHead><TableHead>Paciente / item</TableHead><TableHead className="text-right">Paciente</TableHead><TableHead className="text-right">Seguradora</TableHead><TableHead className="text-right">Pago</TableHead><TableHead className="text-right">Saldo</TableHead><TableHead>Estado</TableHead><TableHead>Reconciliação</TableHead><TableHead className="text-right">Ações</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {invoiceRows.map(({ invoice, reconciliation, reconciled }) => (
+                <TableRow key={invoice.id}>
+                  <TableCell><p className="font-mono text-[12px] font-medium">{invoice.number}</p><p className="text-[11px] text-muted-foreground">{formatDateShort(invoice.issuedAt)}</p></TableCell>
+                  <TableCell><p className="text-sm font-medium">{invoice.patient.name}</p><p className="max-w-56 truncate text-[12px] text-muted-foreground">{invoice.items.map((item) => item.description).join(" · ") || "Sem itens"}</p>{invoice.healthPlan && <p className="text-[11px] text-info">{invoice.healthPlan.insuranceCompany.name} · {invoice.healthPlan.name}</p>}</TableCell>
+                  <TableCell className="text-right text-[13px] tabular"><span>{formatMZN(invoice.patientDue)}</span><span className="block text-[11px] text-muted-foreground">saldo {formatMZN(reconciliation.patientOutstanding)}</span></TableCell>
+                  <TableCell className="text-right text-[13px] tabular"><span>{formatMZN(invoice.insurerDue)}</span><span className="block text-[11px] text-muted-foreground">saldo {formatMZN(reconciliation.insurerOutstanding)}</span></TableCell>
+                  <TableCell className="text-right font-medium tabular text-success">{formatMZN(reconciliation.amountPaid)}</TableCell>
+                  <TableCell className="text-right font-medium tabular text-danger">{formatMZN(reconciliation.outstanding)}</TableCell>
+                  <TableCell><Badge variant={invoice.status === "PAGA" ? "success" : invoice.status === "PARCIAL" ? "warning" : invoice.status === "ANULADA" ? "neutral" : "info"}>{invoice.status === "PAGA" ? "Paga" : invoice.status === "PARCIAL" ? "Parcial" : invoice.status === "ANULADA" ? "Anulada" : "Emitida"}</Badge></TableCell>
+                  <TableCell>{reconciled ? <span className="inline-flex items-center gap-1 text-xs font-medium text-success"><CheckCircle2 className="size-3.5" /> Conciliada</span> : <span className="inline-flex items-center gap-1 text-xs font-medium text-warning"><AlertTriangle className="size-3.5" /> Divergente</span>}</TableCell>
+                  <TableCell><div className="flex justify-end gap-1.5">{invoice.payments[0] && <Link href={`/financeiro/recibos/${invoice.payments[0].id}`} target="_blank" className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground" title="Abrir último recibo"><ExternalLink className="size-4" /></Link>}{can(user.role, "finance.manage") && reconciliation.outstanding > 0 && invoice.status !== "ANULADA" && <InvoicePaymentButton invoiceId={invoice.id} invoiceNumber={invoice.number} patientOutstanding={reconciliation.patientOutstanding} insurerOutstanding={reconciliation.insurerOutstanding} />}</div></TableCell>
+                </TableRow>
+              ))}
+              {invoiceRows.length === 0 && <TableRow><TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">Nenhuma fatura corresponde aos filtros.</TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Contas de seguradoras</CardTitle><CardDescription>Responsabilidade, recebimentos e saldo por seguradora</CardDescription></CardHeader>
+        <CardContent className="pt-0">
+          <Table><TableHeader><TableRow><TableHead>Seguradora</TableHead><TableHead className="text-right">Faturas</TableHead><TableHead className="text-right">Faturado</TableHead><TableHead className="text-right">Recebido</TableHead><TableHead className="text-right">Por receber</TableHead></TableRow></TableHeader><TableBody>
+            {insurerAccounts.map((account) => <TableRow key={account.id}><TableCell className="font-medium">{account.name}</TableCell><TableCell className="text-right tabular">{account.invoices}</TableCell><TableCell className="text-right tabular">{formatMZN(account.billed)}</TableCell><TableCell className="text-right tabular text-success">{formatMZN(account.paid)}</TableCell><TableCell className="text-right font-medium tabular text-danger">{formatMZN(account.outstanding)}</TableCell></TableRow>)}
+            {insurerAccounts.length === 0 && <TableRow><TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">Sem contas de seguradoras.</TableCell></TableRow>}
+          </TableBody></Table>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
         <Card>
           <CardHeader><CardTitle>Recebimentos por método</CardTitle><CardDescription>Este mês</CardDescription></CardHeader>
@@ -104,6 +230,7 @@ export default async function FinanceiroPage() {
                     <TableCell className="text-right font-medium tabular text-success">{formatMZN(r.amount)}</TableCell>
                   </TableRow>
                 ))}
+                {d.recentRev.length === 0 && <TableRow><TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">Nenhuma receita corresponde aos filtros.</TableCell></TableRow>}
               </TableBody>
             </Table>
           </CardContent>
@@ -153,6 +280,7 @@ export default async function FinanceiroPage() {
                   )}
                 </TableRow>
               ))}
+              {d.recentExp.length === 0 && <TableRow><TableCell colSpan={can(user.role, "finance.manage") ? 6 : 5} className="py-8 text-center text-sm text-muted-foreground">Nenhuma despesa corresponde aos filtros.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>

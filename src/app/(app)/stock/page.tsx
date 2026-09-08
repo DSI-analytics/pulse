@@ -1,4 +1,5 @@
-import { AlertTriangle, PackageX, CalendarClock, Package } from "lucide-react";
+import { AlertTriangle, PackageX, CalendarClock } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
@@ -13,15 +14,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { formatMZN } from "@/lib/money";
 import { formatDateShort } from "@/lib/datetime";
+import { ListFilters } from "@/components/list-filters";
 
 function daysUntil(date: Date | null): number | null {
   if (!date) return null;
   return Math.round((date.getTime() - Date.now()) / 86400000);
 }
 
-export default async function StockPage() {
+export default async function StockPage({ searchParams }: { searchParams: Promise<{ q?: string; categoria?: string; estado?: string }> }) {
   const user = await requirePermission("inventory.view");
-  const [items, categories, movements] = await Promise.all([
+  const sp = await searchParams;
+  const query = (sp.q ?? "").trim().toLocaleLowerCase("pt");
+  const [allItems, categories, movements] = await Promise.all([
     prisma.inventoryItem.findMany({
       where: { clinicId: user.clinicId },
       orderBy: { name: "asc" },
@@ -38,11 +42,18 @@ export default async function StockPage() {
       },
     }),
   ]);
+  const items = allItems.filter((item) => {
+    const expiry = daysUntil(item.expiryDate);
+    const status = item.currentStock === 0 ? "esgotado" : item.currentStock < item.minStock ? "baixo" : expiry !== null && expiry <= 30 ? "expira" : "ok";
+    return (!query || item.name.toLocaleLowerCase("pt").includes(query) || item.sku.toLocaleLowerCase("pt").includes(query))
+      && (!sp.categoria || item.categoryId === sp.categoria)
+      && (!sp.estado || status === sp.estado);
+  });
   const canManage = can(user.role, "inventory.manage");
-  const stockOptions = items.map((i) => ({ id: i.id, name: i.name, unit: i.unit, currentStock: i.currentStock }));
+  const stockOptions = allItems.map((i) => ({ id: i.id, name: i.name, unit: i.unit, currentStock: i.currentStock }));
 
-  const alerts: { icon: any; tone: "danger" | "warning"; text: string }[] = [];
-  for (const i of items) {
+  const alerts: { icon: LucideIcon; tone: "danger" | "warning"; text: string }[] = [];
+  for (const i of allItems) {
     const dLeft = i.avgDailyConsumption > 0 ? Math.round(i.currentStock / i.avgDailyConsumption) : null;
     if (i.currentStock === 0) alerts.push({ icon: PackageX, tone: "danger", text: `${i.name} esgotado.` });
     else if (i.currentStock < i.minStock)
@@ -59,7 +70,7 @@ export default async function StockPage() {
       <PageHeader
         eyebrow="Gestão"
         title="Stock"
-        description={`${items.length} artigos · materiais clínicos e operacionais`}
+        description={`${allItems.length} artigos · materiais clínicos e operacionais`}
         actions={
           canManage ? (
             <>
@@ -82,6 +93,12 @@ export default async function StockPage() {
           ) : undefined
         }
       />
+
+      <ListFilters action="/stock" fields={[
+        { name: "q", label: "Pesquisar", value: sp.q?.trim(), type: "search", placeholder: "Artigo ou SKU…" },
+        { name: "categoria", label: "Categoria", value: sp.categoria, options: categories.map((category) => ({ value: category.id, label: category.name })) },
+        { name: "estado", label: "Estado", value: sp.estado, options: [{ value: "ok", label: "OK" }, { value: "baixo", label: "Stock baixo" }, { value: "esgotado", label: "Esgotado" }, { value: "expira", label: "A expirar" }] },
+      ]} />
 
       {alerts.length > 0 && (
         <Card className="border-warning/30 bg-warning-muted/30">
@@ -165,6 +182,7 @@ export default async function StockPage() {
                   </TableRow>
                 );
               })}
+              {items.length === 0 && <TableRow><TableCell colSpan={canManage ? 9 : 8} className="py-8 text-center text-sm text-muted-foreground">Nenhum artigo corresponde aos filtros.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>

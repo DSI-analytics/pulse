@@ -28,22 +28,27 @@ export function CommandSearch() {
   React.useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 30);
     else {
-      setQ("");
-      setHits([]);
+      setTimeout(() => {
+        setQ("");
+        setHits([]);
+      }, 0);
     }
   }, [open]);
 
   React.useEffect(() => {
     if (q.trim().length < 2) {
-      setHits([]);
+      setTimeout(() => setHits([]), 0);
       return;
     }
-    setLoading(true);
+    const start = setTimeout(() => setLoading(true), 0);
     const t = setTimeout(async () => {
       setHits(await globalSearch(q));
       setLoading(false);
     }, 200);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(start);
+      clearTimeout(t);
+    };
   }, [q]);
 
   function go(href: string) {

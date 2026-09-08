@@ -16,21 +16,20 @@ export async function setAppointmentStatus(id: string, status: AppointmentStatus
       status: true,
       doctorId: true,
       patientId: true,
-      specialtyId: true,
-      healthPlanId: true,
-      priceQuoted: true,
-      startAt: true,
-      endAt: true,
-      revenue: { select: { id: true } },
     },
   });
   if (!appt) return { error: "Marcação não encontrada." };
-
-  // Permission: check-in vs full management.
+  if (user.role === "DOCTOR" && (!user.doctorId || appt.doctorId !== user.doctorId)) {
+    return { error: "Só pode gerir marcações da sua própria agenda." };
+  }
+  // Permission: operational transitions and clinical transitions are separate.
   if (status === "CHEGOU") {
     if (!can(user.role, "appointment.checkin") && !can(user.role, "appointment.manage"))
       return { error: "Sem permissão." };
-  } else if (!can(user.role, "appointment.manage") && !can(user.role, "consultation.conduct")) {
+  } else if (status === "EM_CONSULTA" || status === "CONCLUIDA") {
+    if (!can(user.role, "consultation.conduct")) return { error: "Sem permissão clínica." };
+    if (status === "CONCLUIDA") return { error: "Conclua a consulta através do editor clínico." };
+  } else if (!can(user.role, "appointment.manage")) {
     return { error: "Sem permissão." };
   }
 
@@ -44,8 +43,7 @@ export async function setAppointmentStatus(id: string, status: AppointmentStatus
       },
     });
 
-    // Recognise revenue once, when a consultation is concluded.
-    if (status === "CONCLUIDA" && !appt.revenue) {
+    if (status === "EM_CONSULTA") {
       await tx.consultation.upsert({
         where: { appointmentId: appt.id },
         create: {
@@ -53,24 +51,9 @@ export async function setAppointmentStatus(id: string, status: AppointmentStatus
           appointmentId: appt.id,
           patientId: appt.patientId,
           doctorId: appt.doctorId,
-          startedAt: appt.startAt,
-          endedAt: appt.endAt,
+          startedAt: new Date(),
         },
-        update: { endedAt: new Date() },
-      });
-      await tx.revenue.create({
-        data: {
-          clinicId: user.clinicId,
-          source: appt.healthPlanId ? "SEGURADORA" : "CONSULTA",
-          description: "Consulta",
-          amount: appt.priceQuoted,
-          patientId: appt.patientId,
-          doctorId: appt.doctorId,
-          specialtyId: appt.specialtyId,
-          healthPlanId: appt.healthPlanId,
-          appointmentId: appt.id,
-          status: appt.healthPlanId ? "PENDENTE" : "PAGO",
-        },
+        update: { startedAt: new Date() },
       });
     }
   });

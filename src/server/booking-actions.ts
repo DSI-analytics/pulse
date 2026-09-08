@@ -1,12 +1,14 @@
 "use server";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { addMinutes } from "date-fns";
+import { addDays, addMinutes } from "date-fns";
+import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { generateDaySlots, hasConflict, type WeeklyRule } from "@/lib/domain/availability";
+import { CLINIC_TZ } from "@/lib/datetime";
 
 export interface BookingContext {
   specialties: { id: string; name: string; color: string }[];
@@ -153,18 +155,20 @@ export async function getDoctorAvailability(
 
   if (!doctor) return { error: "Médico não encontrado." };
 
-  const target = new Date(`${date}T00:00:00`);
+  const target = fromZonedTime(`${date}T00:00:00`, CLINIC_TZ);
   if (Number.isNaN(target.getTime())) return { error: "Data inválida." };
 
-  const rule = doctor.schedules.find((s) => s.weekday === target.getDay()) as WeeklyRule | undefined;
+  const rule = doctor.schedules.find((s) => s.weekday === toZonedTime(target, CLINIC_TZ).getDay()) as WeeklyRule | undefined;
+  const dayStart = target;
+  const dayEnd = fromZonedTime(`${formatInTimeZone(addDays(target, 1), CLINIC_TZ, "yyyy-MM-dd")}T00:00:00`, CLINIC_TZ);
   const busy = await prisma.appointment.findMany({
     where: {
       doctorId: doctor.id,
       clinicId: user.clinicId,
       status: { notIn: ["CANCELADA", "NAO_COMPARECEU"] },
       startAt: {
-        gte: new Date(`${date}T00:00:00`),
-        lt: new Date(`${date}T23:59:59`),
+        gte: dayStart,
+        lt: dayEnd,
       },
     },
     select: { startAt: true, endAt: true },
@@ -179,13 +183,14 @@ export async function getDoctorAvailability(
       endTime: ex.endTime,
     })),
     busy.map((b) => ({ start: b.startAt, end: b.endAt })),
+    CLINIC_TZ,
   );
 
   const slots: { start: string; label: string }[] = daySlots
     .filter((slot) => !slot.taken)
     .map((slot) => ({
       start: slot.start.toISOString(),
-      label: `${slot.start.toLocaleTimeString("pt-PT", { hour: "2-digit", minute: "2-digit", hour12: false })}`,
+      label: formatInTimeZone(slot.start, CLINIC_TZ, "HH:mm"),
     }));
 
   return { slots };
@@ -218,18 +223,20 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
     return { error: "Não é possível agendar numa data/hora passada." };
   }
   const endAt = addMinutes(startAt, doctor.consultationDuration);
+  const clinicStart = toZonedTime(startAt, CLINIC_TZ);
+  const clinicDate = formatInTimeZone(startAt, CLINIC_TZ, "yyyy-MM-dd");
 
   const sameDayRule = await prisma.doctorSchedule.findFirst({
     where: {
       doctorId: doctor.id,
-      weekday: startAt.getDay(),
+      weekday: clinicStart.getDay(),
     },
     select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true },
   });
   const sameDayExceptions = await prisma.doctorAvailabilityException.findMany({
     where: {
       doctorId: doctor.id,
-      date: new Date(startAt.toISOString().slice(0, 10)),
+      date: fromZonedTime(`${clinicDate}T00:00:00`, CLINIC_TZ),
     },
     select: { type: true, startTime: true, endTime: true },
   });
@@ -250,7 +257,7 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
   }
 
   const daySlots = generateDaySlots(
-    new Date(startAt.toISOString().slice(0, 10) + "T00:00:00"),
+    fromZonedTime(`${clinicDate}T00:00:00`, CLINIC_TZ),
     sameDayRule ?? undefined,
     sameDayExceptions.map((ex) => ({
       type: ex.type as "FOLGA" | "FERIAS" | "HORARIO_ESPECIAL" | "BLOQUEIO",
@@ -258,6 +265,7 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
       endTime: ex.endTime,
     })),
     busy,
+    CLINIC_TZ,
   );
 
   const slotMatches = daySlots.some((slot) => slot.start.getTime() === startAt.getTime());
@@ -292,24 +300,38 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
     }
   }
 
-  const appt = await prisma.appointment.create({
-    data: {
-      clinicId: user.clinicId,
-      patientId: patient.id,
-      doctorId: doctor.id,
-      specialtyId: doctor.specialtyId,
-      type: data.type,
-      serviceId,
-      status: "MARCADA",
-      startAt,
-      endAt,
-      isPrivate: data.isPrivate || !healthPlanId,
-      healthPlanId,
-      priceQuoted,
-      reason: data.reason || null,
-      createdById: user.userId,
-    },
-    select: { id: true },
+  const appt = await prisma.$transaction(async (tx) => {
+    const appointment = await tx.appointment.create({
+      data: {
+        clinicId: user.clinicId,
+        patientId: patient.id,
+        doctorId: doctor.id,
+        specialtyId: doctor.specialtyId,
+        type: data.type,
+        serviceId,
+        status: "MARCADA",
+        startAt,
+        endAt,
+        isPrivate: data.isPrivate || !healthPlanId,
+        healthPlanId,
+        priceQuoted,
+        reason: data.reason || null,
+        createdById: user.userId,
+      },
+      select: { id: true },
+    });
+
+    await tx.consultation.create({
+      data: {
+        clinicId: user.clinicId,
+        appointmentId: appointment.id,
+        patientId: patient.id,
+        doctorId: doctor.id,
+        startedAt: startAt,
+      },
+    });
+
+    return appointment;
   });
 
   await audit({

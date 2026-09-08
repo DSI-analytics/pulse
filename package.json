@@ -15,6 +15,7 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
     "db:deploy": "prisma migrate deploy",
+    "patient:token": "node scripts/create-patient-portal-token.mjs",
     "test": "vitest run",
     "postinstall": "prisma generate"
   },
@@ -22,6 +23,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.122.0",
     "@hookform/resolvers": "^5.7.1",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
@@ -32,6 +34,7 @@
     "jose": "^6.2.8",
     "lucide-react": "^1.31.0",
     "next": "16.3.0",
+    "nodemailer": "^9.0.6",
     "prisma": "^6.19.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -45,6 +48,7 @@
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "embedded-postgres": "^18.4.0-beta.17",

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Search, Users, ChevronRight } from "lucide-react";
+import { Users, ChevronRight } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
@@ -9,38 +9,38 @@ import { createPatientRecord } from "@/server/crud-actions";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatDateShort } from "@/lib/datetime";
+import { ListFilters } from "@/components/list-filters";
+import { patientSearchWhere } from "@/server/patient-search";
 
 export default async function PacientesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; cobertura?: string; genero?: string; estado?: string; pagina?: string }>;
 }) {
   const user = await requirePermission("patient.view");
-  const { q } = await searchParams;
+  const { q, cobertura, genero, estado, pagina } = await searchParams;
   const query = (q ?? "").trim();
+  const gender = ["FEMININO", "MASCULINO", "OUTRO"].includes(genero ?? "") ? genero as "FEMININO" | "MASCULINO" | "OUTRO" : undefined;
+  const includeInactive = estado === "inactivos" || estado === "todos";
+  const page = Math.max(1, Number.parseInt(pagina ?? "1", 10) || 1);
+  const pageSize = 50;
 
   const where = {
-    clinicId: user.clinicId,
-    ...(query
-      ? {
-          OR: [
-            { name: { contains: query, mode: "insensitive" as const } },
-            { phone: { contains: query } },
-            { code: { contains: query, mode: "insensitive" as const } },
-          ],
-        }
-      : {}),
+    ...patientSearchWhere(user.clinicId, query, { includeInactive }),
+    ...(estado === "inactivos" ? { isActive: false } : {}),
+    ...(gender ? { gender } : {}),
+    ...(cobertura === "plano" ? { healthPlans: { some: {} } } : cobertura === "particular" ? { healthPlans: { none: {} } } : {}),
   };
 
   const [patients, total] = await Promise.all([
     prisma.patient.findMany({
       where,
       orderBy: { name: "asc" },
-      take: 50,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       select: {
         id: true, code: true, name: true, phone: true, email: true, address: true, birthDate: true, gender: true,
         emergencyContactName: true, emergencyContactPhone: true, registeredAt: true,
@@ -48,11 +48,24 @@ export default async function PacientesPage({
           take: 1,
           select: { healthPlan: { select: { insuranceCompany: { select: { name: true } } } } },
         },
+        isActive: true,
         _count: { select: { appointments: true } },
       },
     }),
-    prisma.patient.count({ where: { clinicId: user.clinicId } }),
+    prisma.patient.count({ where }),
   ]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const pageHref = (n: number) => {
+    const params = new URLSearchParams();
+    if (query) params.set("q", query);
+    if (cobertura) params.set("cobertura", cobertura);
+    if (genero) params.set("genero", genero);
+    if (estado) params.set("estado", estado);
+    if (n > 1) params.set("pagina", String(n));
+    const qs = params.toString();
+    return qs ? `/pacientes?${qs}` : "/pacientes";
+  };
 
   return (
     <>
@@ -84,17 +97,12 @@ export default async function PacientesPage({
         }
       />
 
-      <Card className="p-3">
-        <form className="relative" action="/pacientes">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-subtle-foreground" />
-          <Input
-            name="q"
-            defaultValue={query}
-            placeholder="Pesquisar por nome, telefone ou nº de paciente…"
-            className="pl-9"
-          />
-        </form>
-      </Card>
+      <ListFilters action="/pacientes" fields={[
+        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome, nº, telefone, email, documento ou data de nascimento…" },
+        { name: "cobertura", label: "Cobertura", value: cobertura, options: [{ value: "plano", label: "Com plano" }, { value: "particular", label: "Particular" }] },
+        { name: "genero", label: "Género", value: gender, options: [{ value: "FEMININO", label: "Feminino" }, { value: "MASCULINO", label: "Masculino" }, { value: "OUTRO", label: "Outro" }] },
+        { name: "estado", label: "Estado", value: estado, options: [{ value: "inactivos", label: "Inactivos" }, { value: "todos", label: "Todos" }] },
+      ]} />
 
       <Card>
         {patients.length === 0 ? (
@@ -121,6 +129,7 @@ export default async function PacientesPage({
                     <Link href={`/pacientes/${p.id}`} className="flex items-center gap-2.5">
                       <Avatar name={p.name} className="size-8" />
                       <span className="font-medium">{p.name}</span>
+                      {!p.isActive && <Badge variant="neutral">Inactivo</Badge>}
                     </Link>
                   </TableCell>
                   <TableCell className="font-mono text-[13px] text-muted-foreground">{p.code}</TableCell>
@@ -145,6 +154,26 @@ export default async function PacientesPage({
           </Table>
         )}
       </Card>
+
+      {totalPages > 1 && (
+        <nav className="flex items-center justify-between gap-3 text-sm" aria-label="Paginação de pacientes">
+          <span className="text-muted-foreground">
+            Página {page} de {totalPages} · {total.toLocaleString("pt-PT")} resultados
+          </span>
+          <div className="flex gap-2">
+            {page > 1 && (
+              <Link href={pageHref(page - 1)} className="rounded-md border border-border px-3 py-1.5 hover:bg-surface-2">
+                Anterior
+              </Link>
+            )}
+            {page < totalPages && (
+              <Link href={pageHref(page + 1)} className="rounded-md border border-border px-3 py-1.5 hover:bg-surface-2">
+                Seguinte
+              </Link>
+            )}
+          </div>
+        </nav>
+      )}
     </>
   );
 }

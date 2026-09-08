@@ -61,10 +61,16 @@ Todos os registos relevantes têm `clinicId` (indexado). Os códigos legíveis s
 - Sessões JWT assinadas (`AUTH_SECRET`), cookie `httpOnly`/`sameSite=lax`/`secure` em produção
 - **RBAC** com matriz de permissões por perfil (`src/lib/rbac.ts`), verificada no servidor (`requirePermission`)
 - Isolamento de tenant em todas as queries
-- **Audit log** de ações sensíveis (sem dados clínicos no payload)
+- **Audit log imutável** (append-only garantido por trigger da base de dados),
+  com before/after, IP, sessão e request id — sem credenciais nem texto clínico
+- Proteção contra força bruta no login, sem enumeração de contas
 - Validação de input com Zod em todas as mutações
 - Palavras-passe com `bcrypt`; segredos apenas em variáveis de ambiente
+- Documentos clínicos fora de `/public`, validados por bytes e servidos só por
+  rota autenticada
 - Dinheiro em **centavos** (inteiros) para evitar erros de vírgula flutuante
+
+Detalhe completo em [`DOCUMENTACAO_TECNICA.md`](./DOCUMENTACAO_TECNICA.md).
 
 ---
 
@@ -79,7 +85,7 @@ e adicionar `~/.local/node/bin` ao `PATH`.
 npm install
 
 # 2. Configuração
-cp .env.example .env        # ajuste AUTH_SECRET (openssl rand -base64 48)
+cp .env.example .env        # ajuste AUTH_SECRET e DEFAULT_USER_PASSWORD
 
 # 3. Base de dados de desenvolvimento (PostgreSQL userland, porta 5433)
 npm run db:dev              # deixe a correr num terminal
@@ -96,6 +102,40 @@ npm run dev                 # http://localhost:3000
 > Turbopack não consegue lançar o worker de PostCSS. Nesse caso use
 > `next dev --webpack` (ver `.claude/launch.json`). Num terminal normal,
 > `npm run dev` (Turbopack) funciona sem alterações.
+
+### Aceder a partir de outro computador da rede
+
+`npm run dev` já escuta em todos os interfaces (`0.0.0.0`) e anuncia o endereço
+no arranque:
+
+```
+- Local:         http://localhost:3000
+- Network:       http://192.168.30.15:3000   ← use este no outro computador
+```
+
+Duas condições têm de estar reunidas:
+
+1. **`allowedDevOrigins`** — já configurado em `next.config.ts` para as gamas
+   privadas (`192.168.*.*`, `10.*.*.*`, `172.16–31.*.*`) e para o nome da
+   máquina. Sem isto o Next bloqueia os recursos de desenvolvimento e a página
+   abre sem JavaScript. Para autorizar outra origem, defina `DEV_ALLOWED_ORIGINS`
+   no `.env` (valores separados por vírgulas).
+
+2. **Firewall do Windows** — é preciso abrir a porta 3000 **uma vez**, num
+   PowerShell **como administrador**:
+
+   ```powershell
+   New-NetFirewallRule -DisplayName "Pulso dev (3000)" -Direction Inbound `
+     -Action Allow -Protocol TCP -LocalPort 3000 `
+     -Profile Private,Public -RemoteAddress LocalSubnet
+   ```
+
+   `-RemoteAddress LocalSubnet` limita o acesso à rede local — a porta não fica
+   exposta em redes públicas. Para remover: `Remove-NetFirewallRule -DisplayName "Pulso dev (3000)"`.
+
+> **Isto é só para desenvolvimento.** O servidor de dev não deve ser usado para
+> alojar a aplicação: sem HTTPS, o cookie de sessão viaja em claro na rede.
+> Para uso real, veja *Hospedar em produção*.
 
 ### Alternativa com Docker
 ```bash
@@ -142,9 +182,19 @@ A app fica em `http://SEU_IP:3000` — coloque um **Nginx/Caddy com HTTPS** à f
 - [ ] **Não correr `npm run db:seed` em produção** — apaga tudo e cria dados fictícios.
       Em produção use apenas `npm run db:deploy`.
 - [ ] **Apagar/alterar as contas de demonstração** e a palavra-passe `pulso123`.
+- [ ] Definir uma `DEFAULT_USER_PASSWORD` forte; é aplicada ao criar ou redefinir
+      acessos na área de Configurações.
 - [ ] Definir a política de retenção e backup dos dados clínicos (dados de saúde
       são sensíveis; confirme os requisitos legais aplicáveis em Moçambique).
-- [ ] Rever quem tem perfil de Administrador.
+      **Snapshots do fornecedor de cloud não são um backup** — ver a secção 12 da
+      documentação técnica (RPO/RTO, procedimento de restauro e teste periódico).
+- [ ] Definir `PULSO_UPLOAD_DIR` para um **volume persistente incluído no backup**;
+      sem ele o prontuário fica com referências a ficheiros inexistentes.
+- [ ] Rever quem tem perfil de Administrador e quem tem `audit.view`.
+- [ ] Se usar a API FHIR: definir `FHIR_BASE_URL`, emitir tokens de `ApiClient`
+      com os scopes mínimos e um prazo de validade, e servir apenas por HTTPS.
+- [ ] Se usar o assistente de Insights: definir `AI_API_KEY` **fora do
+      repositório**. Sem chave, a aba continua a funcionar em modo determinístico.
 
 > **Nota:** o `npm run db:dev` (PostgreSQL userland) destina-se **apenas a
 > desenvolvimento local** — não o use para alojar.
@@ -155,17 +205,22 @@ A app fica em `http://SEU_IP:3000` — coloque um **Nginx/Caddy com HTTPS** à f
 
 Palavra-passe para todas: **`pulso123`**
 
-| Perfil        | Email                             | Acesso |
-| ------------- | --------------------------------- | ------ |
-| Administrador | `admin@clinicamarianu.mz`         | Total |
-| Rececionista  | `rececao@clinicamarianu.mz`       | Pacientes, marcações, check-in |
-| Médico        | `medico@clinicamarianu.mz`        | Agenda própria, consultas, notas clínicas |
-| Financeiro    | `financeiro@clinicamarianu.mz`    | Receitas, despesas, planos, relatórios |
-| Gestor Stock  | `stock@clinicamarianu.mz`         | Stock, fornecedores, compras |
+| Perfil            | Email                             | Acesso |
+| ----------------- | --------------------------------- | ------ |
+| Administrador     | `admin@clinicamarianu.mz`         | Total, incluindo auditoria e API FHIR |
+| Gestor da Clínica | `gestor@clinicamarianu.mz`        | **Insights e leitura operacional/financeira — sem privilégios administrativos nem acesso clínico** |
+| Rececionista      | `rececao@clinicamarianu.mz`       | Pacientes, marcações, check-in |
+| Médico            | `medico@clinicamarianu.mz`        | Prontuário completo, prescrições, exames, internamentos |
+| Enfermeiro        | `enfermagem@clinicamarianu.mz`    | Leitura clínica, sinais vitais, alergias, documentos |
+| Téc. Laboratório  | `laboratorio@clinicamarianu.mz`   | Pedidos e resultados de exames |
+| Financeiro        | `financeiro@clinicamarianu.mz`    | Receitas, despesas, planos, relatórios, Insights |
+| Gestor Stock      | `stock@clinicamarianu.mz`         | Stock, fornecedores, compras |
 
 Dados semeados: 1 clínica (Maputo), 10 médicos, 300 pacientes, 7 especialidades,
 4 seguradoras, ~5 800 marcações ao longo de 3 meses, receitas, despesas, faturas,
-pagamentos, stock, compras e notificações — tudo em MZN.
+pagamentos, stock, compras e notificações — mais 400 episódios clínicos com sinais
+vitais, diagnósticos codificados (ICD-10), alergias, receitas e pedidos/resultados
+de exames. Tudo em MZN e **inteiramente fictício**.
 
 ---
 
@@ -186,12 +241,22 @@ pagamentos, stock, compras e notificações — tudo em MZN.
 
 ## Testes
 
-Cobrem a lógica crítica (pura, sem BD):
+135 testes cobrem a lógica crítica (pura, sem BD):
 
 - **Prevenção de duplo agendamento** e geração de vagas (`availability`)
 - **Cálculo de ocupação**, utilização, no-show, receita/hora (`occupancy`)
 - **Movimentos de stock** e custo médio ponderado (`stock`)
-- **Matriz de permissões** por perfil (`rbac`)
+- **Matriz de permissões** por perfil, incluindo os limites do Gestor da Clínica
+  e o acesso restrito à auditoria (`rbac`)
+- **Redacção de auditoria**: credenciais e texto clínico nunca chegam ao log
+  (`audit-redaction`)
+- **Sinais vitais**: IMC, limites plausíveis, sinalização fora do intervalo (`vitals`)
+- **Alergias vs. prescrição**: correspondência por princípio activo (`allergy-check`)
+- **Detecção de pacientes duplicados** (`patient-matching`)
+- **Insights**: escolha de métrica, períodos, isolamento por permissão e
+  resistência a *prompt injection* (`insights-matching`)
+- **Mapeamento e validação FHIR**, incluindo `OperationOutcome` (`fhir/*`)
+- **Limite de taxa** (`rate-limit`)
 - **Formatação/parse de MZN** (`money`)
 
 ```bash
@@ -220,18 +285,59 @@ npm run test
 - **Compras a fornecedores**: ao registar como recebida, dá **entrada automática no stock**,
   recalcula o custo médio e lança a despesa em contas a pagar
 - Relatórios com **exportação CSV** e vista para impressão
-- Insights determinísticos (regras) + arquitetura pronta para assistente com IA
-- Autenticação, RBAC, isolamento de tenant, audit log, notificações
+- Autenticação, RBAC, isolamento de tenant, notificações por permissão
+
+### Prontuário clínico eletrónico
+
+- **Cadastro único** do paciente com deteção de duplicados (documento, telefone,
+  e-mail, nome, data de nascimento) e fusão administrativa auditada
+- **Episódios clínicos** (consulta, urgência, acompanhamento, internamento,
+  procedimento, exame, encaminhamento)
+- **Sinais vitais** com IMC calculado, limites validados e sinalização de valores
+  fora do intervalo de referência
+- **Diagnósticos** com `code` + `codeSystem` (preparado para ICD-10/CID e SNOMED CT)
+- **Alergias** estruturadas, destacadas no topo do prontuário, com verificação
+  contra prescrições antes da emissão
+- **Prescrições** com histórico — uma receita antiga nunca é alterada em silêncio
+- **Exames** (laboratório e imagiologia) com ciclo de estados e resultados com
+  intervalo de referência e sinalização de anormalidade
+- **Procedimentos, tratamentos e internamentos** com alta e resumo
+- **Linha temporal clínica** com filtros e carregamento incremental por cursor
+- **Documentos clínicos** validados por bytes, guardados fora de `/public` e
+  entregues apenas por rota autenticada e auditada
+
+### Segurança e governação
+
+- Perfil **Gestor da Clínica** — Insights da sua instituição sem privilégios
+  administrativos, com autorização institucional explícita
+- **Auditoria completa e imutável**: before/after, IP, sessão, endpoint,
+  request id; `UPDATE`/`DELETE` rejeitados pela base de dados
+- Painel de auditoria com filtros, paginação e comparação antes/depois
+- Proteção contra força bruta no login, sem enumeração de contas
+
+### Interoperabilidade e IA
+
+- **API HL7 FHIR R4** com 13 recursos, autenticada, com scopes, limite de taxa,
+  validação de payload, `OperationOutcome` e auditoria de todas as operações
+- **Assistente de Insights** sobre um catálogo fechado de métricas — o modelo
+  não acede à base de dados nem executa SQL, e não consegue contornar o RBAC
 
 ---
 
-## Fase 2 (arquitetura preparada, ainda não construída)
+## Documentação técnica
 
-Marcação online pelo paciente · portal do paciente · confirmação/lembretes por
-WhatsApp/SMS · lista de espera · registo clínico eletrónico completo · gestão de
-receituário · **assistente de gestão com LLM** (sobre métricas agregadas e seguras) ·
-previsão de no-show e de capacidade · gestão de sinistros de seguradora · faturação
-eletrónica · multi-filial na UI · app móvel · modo offline · integrações por API.
+Arquitetura, modelos, migrações, RBAC, auditoria, FHIR (com exemplos), IA,
+segurança, testes, backups (RPO/RTO) e dívida técnica:
+**[`DOCUMENTACAO_TECNICA.md`](./DOCUMENTACAO_TECNICA.md)**.
+
+---
+
+## Próximas fases
+
+Marcação online pelo paciente · confirmação/lembretes por WhatsApp/SMS · lista de
+espera · previsão de no-show e de capacidade · gestão de sinistros de seguradora ·
+faturação eletrónica · multi-filial na UI · app móvel · modo offline · adaptadores
+de laboratório e farmácia sobre a camada de integração já existente.
 
 ---
 

@@ -11,12 +11,29 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { formatMZN } from "@/lib/money";
 import { formatDateShort } from "@/lib/datetime";
+import { ListFilters } from "@/components/list-filters";
+import type { PaymentTermsStatus, PurchaseStatus } from "@prisma/client";
 
-export default async function FornecedoresPage() {
+const PURCHASE_STATUSES: PurchaseStatus[] = ["ENCOMENDADA", "RECEBIDA", "PARCIAL", "CANCELADA"];
+const PAYMENT_STATUSES: PaymentTermsStatus[] = ["PENDENTE", "PARCIAL", "PAGO"];
+
+export default async function FornecedoresPage({ searchParams }: { searchParams: Promise<{ q?: string; categoria?: string; divida?: string; compra?: string; pagamento?: string }> }) {
   const user = await requirePermission("supplier.view");
-  const [suppliers, purchases] = await Promise.all([
+  const sp = await searchParams;
+  const query = (sp.q ?? "").trim();
+  const purchaseStatus = PURCHASE_STATUSES.includes(sp.compra as PurchaseStatus) ? sp.compra as PurchaseStatus : undefined;
+  const paymentStatus = PAYMENT_STATUSES.includes(sp.pagamento as PaymentTermsStatus) ? sp.pagamento as PaymentTermsStatus : undefined;
+  const [suppliers, purchases, categoryRows] = await Promise.all([
     prisma.supplier.findMany({
-      where: { clinicId: user.clinicId },
+      where: {
+        clinicId: user.clinicId,
+        ...(query ? { OR: [
+          { name: { contains: query, mode: "insensitive" } },
+          { email: { contains: query, mode: "insensitive" } },
+          { phone: { contains: query } },
+        ] } : {}),
+        ...(sp.categoria ? { category: sp.categoria } : {}),
+      },
       orderBy: { name: "asc" },
       include: {
         purchases: { select: { total: true, orderedAt: true, paymentStatus: true } },
@@ -24,7 +41,16 @@ export default async function FornecedoresPage() {
       },
     }),
     prisma.purchase.findMany({
-      where: { clinicId: user.clinicId },
+      where: {
+        clinicId: user.clinicId,
+        ...(query ? { OR: [
+          { invoiceNumber: { contains: query, mode: "insensitive" } },
+          { supplier: { name: { contains: query, mode: "insensitive" } } },
+        ] } : {}),
+        ...(purchaseStatus ? { status: purchaseStatus } : {}),
+        ...(paymentStatus ? { paymentStatus } : {}),
+        ...(sp.categoria ? { supplier: { category: sp.categoria } } : {}),
+      },
       orderBy: { orderedAt: "desc" },
       take: 10,
       select: {
@@ -33,6 +59,7 @@ export default async function FornecedoresPage() {
         _count: { select: { items: true } },
       },
     }),
+    prisma.supplier.findMany({ where: { clinicId: user.clinicId, category: { not: null } }, distinct: ["category"], orderBy: { category: "asc" }, select: { category: true } }),
   ]);
 
   const rows = suppliers.map((s) => {
@@ -40,14 +67,14 @@ export default async function FornecedoresPage() {
     const outstanding = s.purchases.filter((p) => p.paymentStatus !== "PAGO").reduce((a, p) => a + p.total, 0);
     const last = s.purchases.map((p) => p.orderedAt).sort((a, b) => b.getTime() - a.getTime())[0];
     return { s, totalPurchased, outstanding, last, orders: s.purchases.length };
-  });
+  }).filter((row) => sp.divida !== "sim" || row.outstanding > 0);
 
   return (
     <>
       <PageHeader
         eyebrow="Gestão"
         title="Fornecedores"
-        description={`${suppliers.length} fornecedores`}
+        description={`${rows.length} fornecedores`}
         actions={
           can(user.role, "supplier.manage") ? (
             <>
@@ -70,6 +97,13 @@ export default async function FornecedoresPage() {
           ) : undefined
         }
       />
+      <ListFilters action="/fornecedores" fields={[
+        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Fornecedor, contacto ou factura…" },
+        { name: "categoria", label: "Categoria", value: sp.categoria, options: categoryRows.flatMap(({ category }) => category ? [{ value: category, label: category }] : []) },
+        { name: "divida", label: "Dívida", value: sp.divida, options: [{ value: "sim", label: "Com dívida" }] },
+        { name: "compra", label: "Estado da compra", value: purchaseStatus, options: PURCHASE_STATUSES.map((value) => ({ value, label: value.replaceAll("_", " ") })) },
+        { name: "pagamento", label: "Pagamento", value: paymentStatus, options: PAYMENT_STATUSES.map((value) => ({ value, label: value })) },
+      ]} />
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -82,6 +116,7 @@ export default async function FornecedoresPage() {
                 <TableHead className="text-right">Total comprado</TableHead>
                 <TableHead className="text-right">Em dívida</TableHead>
                 <TableHead>Última compra</TableHead>
+                {can(user.role, "supplier.manage") && <TableHead className="text-right">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -120,6 +155,7 @@ export default async function FornecedoresPage() {
                   )}
                 </TableRow>
               ))}
+              {rows.length === 0 && <TableRow><TableCell colSpan={can(user.role, "supplier.manage") ? 8 : 7} className="py-8 text-center text-sm text-muted-foreground">Nenhum fornecedor corresponde aos filtros.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>

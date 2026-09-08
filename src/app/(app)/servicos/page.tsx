@@ -11,6 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { formatMZN } from "@/lib/money";
+import { ListFilters } from "@/components/list-filters";
+import type { RevenueSource } from "@prisma/client";
 
 const SOURCE_LABEL: Record<string, string> = {
   CONSULTA: "Consulta",
@@ -22,13 +24,28 @@ const SOURCE_LABEL: Record<string, string> = {
   OUTRO: "Outro",
 };
 
-export default async function ServicosPage() {
+const SERVICE_SOURCES = ["CONSULTA", "EXAME", "PROCEDIMENTO", "PRODUTO", "SEGURADORA", "PRIVADO", "OUTRO"] as RevenueSource[];
+
+export default async function ServicosPage({ searchParams }: { searchParams: Promise<{ q?: string; categoria?: string; tipo?: string; estado?: string }> }) {
   const user = await requirePermission("service.view");
-  const services = await prisma.service.findMany({
-    where: { clinicId: user.clinicId },
-    orderBy: [{ category: "asc" }, { name: "asc" }],
-    include: { _count: { select: { appointments: true } } },
-  });
+  const sp = await searchParams;
+  const query = (sp.q ?? "").trim();
+  const source = SERVICE_SOURCES.includes(sp.tipo as RevenueSource) ? sp.tipo as RevenueSource : undefined;
+  const isActive = sp.estado === "ativo" ? true : sp.estado === "inativo" ? false : undefined;
+  const [services, categoryRows] = await Promise.all([
+    prisma.service.findMany({
+      where: {
+        clinicId: user.clinicId,
+        ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
+        ...(sp.categoria ? { category: sp.categoria } : {}),
+        ...(source ? { source } : {}),
+        ...(isActive !== undefined ? { isActive } : {}),
+      },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+      include: { _count: { select: { appointments: true } } },
+    }),
+    prisma.service.findMany({ where: { clinicId: user.clinicId }, distinct: ["category"], orderBy: { category: "asc" }, select: { category: true } }),
+  ]);
   const canManage = can(user.role, "service.manage");
 
   return (
@@ -60,6 +77,13 @@ export default async function ServicosPage() {
           ) : undefined
         }
       />
+
+      <ListFilters action="/servicos" fields={[
+        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome do serviço ou exame…" },
+        { name: "categoria", label: "Categoria", value: sp.categoria, options: categoryRows.map(({ category }) => ({ value: category, label: category })) },
+        { name: "tipo", label: "Tipo", value: source, options: SERVICE_SOURCES.map((value) => ({ value, label: SOURCE_LABEL[value] })) },
+        { name: "estado", label: "Estado", value: sp.estado, options: [{ value: "ativo", label: "Activo" }, { value: "inativo", label: "Inactivo" }] },
+      ]} />
 
       <Card>
         <CardContent className="p-0">

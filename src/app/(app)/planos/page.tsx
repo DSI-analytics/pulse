@@ -9,13 +9,22 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { formatMZN } from "@/lib/money";
+import { ListFilters } from "@/components/list-filters";
 
-export default async function PlanosPage() {
+export default async function PlanosPage({ searchParams }: { searchParams: Promise<{ q?: string; seguradora?: string; estado?: string }> }) {
   const user = await requirePermission("healthplan.view");
+  const sp = await searchParams;
+  const query = (sp.q ?? "").trim();
+  const isActive = sp.estado === "ativo" ? true : sp.estado === "inativo" ? false : undefined;
 
   const [plans, invoiceByPlan, apptByPlan, insurers] = await Promise.all([
     prisma.healthPlan.findMany({
-      where: { clinicId: user.clinicId },
+      where: {
+        clinicId: user.clinicId,
+        ...(query ? { name: { contains: query, mode: "insensitive" } } : {}),
+        ...(sp.seguradora ? { insuranceCompanyId: sp.seguradora } : {}),
+        ...(isActive !== undefined ? { isActive } : {}),
+      },
       orderBy: { name: "asc" },
       include: { insuranceCompany: true },
     }),
@@ -75,6 +84,12 @@ export default async function PlanosPage() {
         }
       />
 
+      <ListFilters action="/planos" fields={[
+        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome do plano…" },
+        { name: "seguradora", label: "Seguradora", value: sp.seguradora, options: insurers.map((insurer) => ({ value: insurer.id, label: insurer.name })) },
+        { name: "estado", label: "Estado", value: sp.estado, options: [{ value: "ativo", label: "Activo" }, { value: "inativo", label: "Inactivo" }] },
+      ]} />
+
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -87,6 +102,7 @@ export default async function PlanosPage() {
                 <TableHead className="text-right">Por receber</TableHead>
                 <TableHead className="text-right">Prazo</TableHead>
                 <TableHead>Estado</TableHead>
+                {can(user.role, "healthplan.manage") && <TableHead className="text-right">Ações</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -121,6 +137,7 @@ export default async function PlanosPage() {
                   )}
                 </TableRow>
               ))}
+              {rows.length === 0 && <TableRow><TableCell colSpan={can(user.role, "healthplan.manage") ? 8 : 7} className="py-8 text-center text-sm text-muted-foreground">Nenhum plano corresponde aos filtros.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>

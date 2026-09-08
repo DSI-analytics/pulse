@@ -17,6 +17,7 @@ import {
   type BookingContext,
 } from "@/server/booking-actions";
 import { formatMZN } from "@/lib/money";
+import { formatTime } from "@/lib/datetime";
 
 type Patient = { id: string; code: string; name: string; phone: string | null };
 
@@ -94,7 +95,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
   // debounced patient search
   React.useEffect(() => {
     if (patient || newMode || query.trim().length < 2) {
-      setResults([]);
+      setTimeout(() => setResults([]), 0);
       return;
     }
     const t = setTimeout(async () => setResults((await searchPatients(query)) as Patient[]), 220);
@@ -110,8 +111,10 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
 
   React.useEffect(() => {
     if (!doctorId || !date) {
-      setAvailableSlots([]);
-      setTime("");
+      setTimeout(() => {
+        setAvailableSlots([]);
+        setTime("");
+      }, 0);
       return;
     }
 
@@ -126,8 +129,8 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
         }
 
         const slots = "slots" in res ? res.slots : [];
-        setAvailableSlots(slots.map((slot: { label: string }) => slot.label));
-        setTime(slots[0]?.label ?? "");
+        setAvailableSlots(slots.map((slot) => slot.start));
+        setTime(slots[0]?.start ?? "");
       })
       .catch(() => {
         if (!active) return;
@@ -170,7 +173,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
     if (!availableSlots.includes(time)) return setError("A hora escolhida não está disponível para o médico.");
     if (needsService && !serviceId) return setError("Indique qual o exame/procedimento a efectuar.");
 
-    const startAt = `${date}T${time}:00+02:00`; // Africa/Maputo
+    const startAt = time;
     if (new Date(startAt).getTime() < Date.now() - 2 * 60_000) {
       return setError("Não é possível agendar numa data/hora passada.");
     }
@@ -343,7 +346,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
                 <option value="">{doctorId ? "Selecionar hora" : "Selecione o médico"}</option>
                 {availableSlots.map((slot) => (
                   <option key={slot} value={slot}>
-                    {slot}
+                    {formatTime(slot)}
                   </option>
                 ))}
               </Select>

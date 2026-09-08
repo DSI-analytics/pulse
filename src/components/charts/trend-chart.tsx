@@ -13,12 +13,19 @@ import {
 import { formatMZN, formatMZNCompact } from "@/lib/money";
 
 type Point = { label: string; value: number };
+type TooltipPayload = { value: number };
+type TooltipProps = {
+  active?: boolean;
+  payload?: TooltipPayload[];
+  label?: string;
+  kind: "mzn" | "int";
+};
 
 function fmt(v: number, kind: "mzn" | "int") {
   return kind === "mzn" ? formatMZN(v) : v.toLocaleString("pt-PT");
 }
 
-function TooltipBox({ active, payload, label, kind }: any) {
+function TooltipBox({ active, payload, label, kind }: TooltipProps) {
   if (!active || !payload?.length) return null;
   return (
     <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-lg">

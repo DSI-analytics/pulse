@@ -53,8 +53,10 @@ export function RecordCrudButton({
   );
 
   React.useEffect(() => {
-    setValues(Object.fromEntries(fields.map((f) => [f.name, f.defaultValue ?? ""])));
-    setError(null);
+    setTimeout(() => {
+      setValues(Object.fromEntries(fields.map((f) => [f.name, f.defaultValue ?? ""])));
+      setError(null);
+    }, 0);
   }, [id, fields]);
 
   async function submit() {

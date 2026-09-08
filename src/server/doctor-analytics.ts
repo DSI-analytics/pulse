@@ -27,7 +27,7 @@ export interface DoctorCard {
   availableHours: number;
 }
 
-export async function getDoctorCards(clinicId: string): Promise<DoctorCard[]> {
+export async function getDoctorCards(clinicId: string, includeFinancials = true): Promise<DoctorCard[]> {
   const now = new Date();
   const wStart = startOfWeek(now, { weekStartsOn: 1 });
   const wEnd = endOfWeek(now, { weekStartsOn: 1 });
@@ -45,11 +45,11 @@ export async function getDoctorCards(clinicId: string): Promise<DoctorCard[]> {
       where: { clinicId, startAt: { gte: wStart, lte: wEnd } },
       select: { doctorId: true, status: true, startAt: true },
     }),
-    prisma.revenue.groupBy({
+    includeFinancials ? prisma.revenue.groupBy({
       by: ["doctorId"],
       where: { clinicId, recognisedAt: { gte: wStart, lte: wEnd } },
       _sum: { amount: true },
-    }),
+    }) : Promise.resolve([]),
   ]);
 
   const revMap = new Map(revenue.map((r) => [r.doctorId, r._sum.amount ?? 0]));
@@ -87,7 +87,7 @@ const BLOCKS = [
 ];
 const WD = ["Seg", "Ter", "Qua", "Qui", "Sex"];
 
-export async function getDoctorDetail(clinicId: string, doctorId: string) {
+export async function getDoctorDetail(clinicId: string, doctorId: string, includeFinancials = true) {
   const doctor = await prisma.doctor.findFirst({
     where: { id: doctorId, clinicId },
     include: { specialty: true, schedules: { orderBy: { weekday: "asc" } } },
@@ -103,10 +103,10 @@ export async function getDoctorDetail(clinicId: string, doctorId: string) {
       where: { doctorId, clinicId, startAt: { gte: mStart, lte: mEnd } },
       select: { status: true, startAt: true },
     }),
-    prisma.revenue.aggregate({
+    includeFinancials ? prisma.revenue.aggregate({
       where: { doctorId, clinicId, recognisedAt: { gte: mStart, lte: mEnd } },
       _sum: { amount: true },
-    }),
+    }) : Promise.resolve({ _sum: { amount: null } }),
   ]);
 
   const elapsed = weekdays(mStart, now);

@@ -6,7 +6,6 @@ import { can } from "@/lib/rbac";
 import { prisma } from "@/lib/prisma";
 import { getDoctorDetail } from "@/server/doctor-analytics";
 import { updateDoctorRecord, deleteDoctorRecord } from "@/server/crud-actions";
-import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
@@ -20,9 +19,10 @@ const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
 export default async function DoctorDetail({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission("doctor.view");
+  const canViewFinancials = can(user.role, "finance.view");
   const { id } = await params;
   const [data, doctor, specialties] = await Promise.all([
-    getDoctorDetail(user.clinicId, id),
+    getDoctorDetail(user.clinicId, id, canViewFinancials),
     prisma.doctor.findUnique({
       where: { id, clinicId: user.clinicId },
       select: { id: true, name: true, specialtyId: true, phone: true, email: true, licenseNumber: true, consultationPrice: true, consultationDuration: true },
@@ -77,11 +77,11 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
       </div>
 
       {/* Analytics */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className={canViewFinancials ? "grid grid-cols-2 gap-4 lg:grid-cols-4" : "grid grid-cols-2 gap-4 lg:grid-cols-3"}>
         <KpiCard label="Ocupação (mês)" value={`${Math.round(metrics.scheduleOccupancy * 100)}%`} icon={Gauge} hint="tempo marcado / disponível" />
         <KpiCard label="Consultas concluídas" value={String(metrics.completed)} icon={TrendingUp} hint={`${metrics.patientsPerDay}/dia`} />
         <KpiCard label="Taxa de faltas" value={`${Math.round(metrics.noShowRate * 100)}%`} icon={CalendarX2} invertDelta hint="do total marcado" />
-        <KpiCard label="Receita gerada (mês)" value={formatMZN(receita)} icon={Clock} hint="reconhecida" />
+        {canViewFinancials && <KpiCard label="Receita gerada (mês)" value={formatMZN(receita)} icon={Clock} hint="reconhecida" />}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
@@ -104,7 +104,7 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
             <Line label="Utilização efetiva" value={`${Math.round(metrics.actualUtilisation * 100)}%`} />
             <Line label="Taxa de preenchimento" value={`${Math.round(metrics.fillRate * 100)}%`} />
             <Line label="Duração média" value={`${metrics.avgConsultationMin} min`} />
-            <Line label="Receita / hora clínica" value={formatMZN(metrics.revenuePerClinicalHour)} />
+            {canViewFinancials && <Line label="Receita / hora clínica" value={formatMZN(metrics.revenuePerClinicalHour)} />}
             <Line label="Cancelamentos" value={`${Math.round(metrics.cancellationRate * 100)}%`} />
             <Line label="Vagas ainda disponíveis" value={`${metrics.availableSlotsRemaining}`} highlight />
           </CardContent>

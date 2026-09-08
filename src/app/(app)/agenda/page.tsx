@@ -7,13 +7,18 @@ import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { buttonVariants } from "@/components/ui/button";
 import { StatusPill } from "@/components/status-pill";
 import { AgendaActions } from "@/components/agenda-actions";
 import { NovaMarcacao } from "@/components/nova-marcacao";
 import { EmptyState } from "@/components/ui/empty-state";
-import { TYPE_LABEL, isOverdue } from "@/lib/appointment-status";
+import { TYPE_LABEL, STATUS_LABEL, isOverdue } from "@/lib/appointment-status";
 import { formatMZN } from "@/lib/money";
+import { can } from "@/lib/rbac";
+import { ListFilters } from "@/components/list-filters";
+import type { AppointmentStatus } from "@prisma/client";
+
+const APPOINTMENT_STATUSES: AppointmentStatus[] = ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA", "EM_CONSULTA", "CONCLUIDA", "CANCELADA", "NAO_COMPARECEU"];
 
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + "T12:00:00Z");
@@ -24,26 +29,50 @@ function addDays(iso: string, n: number): string {
 export default async function AgendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ d?: string }>;
+  searchParams: Promise<{ d?: string; q?: string; estado?: string; medico?: string; especialidade?: string }>;
 }) {
   const user = await requirePermission("appointment.view");
   const sp = await searchParams;
   const todayIso = clinicTodayIso();
   const dateIso = sp.d ?? todayIso;
   const { start, end } = dayRange(new Date(dateIso + "T12:00:00Z"));
+  const isDoctor = user.role === "DOCTOR";
+  const query = (sp.q ?? "").trim();
+  const status = APPOINTMENT_STATUSES.includes(sp.estado as AppointmentStatus) ? sp.estado as AppointmentStatus : undefined;
 
-  const appts = await prisma.appointment.findMany({
-    where: { clinicId: user.clinicId, startAt: { gte: start, lte: end } },
-    orderBy: [{ startAt: "asc" }, { doctor: { name: "asc" } }],
-    select: {
-      id: true, startAt: true, status: true, type: true, priceQuoted: true,
-      service: { select: { name: true } },
-      patient: { select: { name: true } },
-      doctor: { select: { name: true } },
-      specialty: { select: { name: true, color: true } },
-      healthPlan: { select: { insuranceCompany: { select: { name: true } } } },
-    },
-  });
+  const [appts, doctors, specialties] = await Promise.all([
+    prisma.appointment.findMany({
+      where: {
+        clinicId: user.clinicId,
+        startAt: { gte: start, lte: end },
+        ...(query ? { patient: { name: { contains: query, mode: "insensitive" } } } : {}),
+        ...(status ? { status } : {}),
+        ...(sp.especialidade ? { specialtyId: sp.especialidade } : {}),
+        // A doctor must only ever receive appointments from their own agenda.
+        ...(isDoctor ? { doctorId: user.doctorId ?? "__sem_medico_associado__" } : sp.medico ? { doctorId: sp.medico } : {}),
+      },
+      orderBy: [{ startAt: "asc" }, { doctor: { name: "asc" } }],
+      select: {
+        id: true, startAt: true, status: true, type: true, priceQuoted: true,
+        service: { select: { name: true } },
+        patient: { select: { name: true } },
+        doctor: { select: { name: true } },
+        specialty: { select: { name: true, color: true } },
+        healthPlan: { select: { insuranceCompany: { select: { name: true } } } },
+      },
+    }),
+    isDoctor ? Promise.resolve([]) : prisma.doctor.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.specialty.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
+
+  const agendaHref = (date: string) => {
+    const params = new URLSearchParams({ d: date });
+    if (query) params.set("q", query);
+    if (status) params.set("estado", status);
+    if (!isDoctor && sp.medico) params.set("medico", sp.medico);
+    if (sp.especialidade) params.set("especialidade", sp.especialidade);
+    return `/agenda?${params}`;
+  };
 
   // "Hoje" / "Amanhã" / "Ontem" — relative to the day actually being viewed.
   const relativeLabel =
@@ -64,15 +93,15 @@ export default async function AgendaPage({
     <>
       <PageHeader
         eyebrow="Operação"
-        title="Agenda"
+        title={isDoctor ? "Minha agenda" : "Agenda"}
         description={formatWeekdayDatePt(new Date(dateIso + "T12:00:00Z"))}
-        actions={<NovaMarcacao />}
+        actions={can(user.role, "appointment.manage") ? <NovaMarcacao /> : undefined}
       />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1.5">
           <Link
-            href={`/agenda?d=${addDays(dateIso, -1)}`}
+            href={agendaHref(addDays(dateIso, -1))}
             className={buttonVariants({ variant: "secondary", size: "icon" })}
             aria-label="Dia anterior"
           >
@@ -86,7 +115,7 @@ export default async function AgendaPage({
           </div>
 
           <Link
-            href={`/agenda?d=${addDays(dateIso, 1)}`}
+            href={agendaHref(addDays(dateIso, 1))}
             className={buttonVariants({ variant: "secondary", size: "icon" })}
             aria-label="Dia seguinte"
           >
@@ -109,13 +138,31 @@ export default async function AgendaPage({
         </div>
       </div>
 
+      <ListFilters
+        action="/agenda"
+        clearHref={`/agenda?d=${dateIso}`}
+        hidden={{ d: dateIso }}
+        fields={[
+          { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome do paciente…" },
+          { name: "estado", label: "Estado", value: status, options: APPOINTMENT_STATUSES.map((value) => ({ value, label: STATUS_LABEL[value] })) },
+          ...(!isDoctor ? [{ name: "medico", label: "Médico", value: sp.medico, options: doctors.map((doctor) => ({ value: doctor.id, label: doctor.name })) }] : []),
+          { name: "especialidade", label: "Especialidade", value: sp.especialidade, options: specialties.map((specialty) => ({ value: specialty.id, label: specialty.name })) },
+        ]}
+      />
+
       <Card>
         {appts.length === 0 ? (
           <div className="p-6">
             <EmptyState
               icon={CalendarDays}
-              title="Sem marcações neste dia"
-              description="Crie uma nova marcação ou navegue para outro dia."
+              title={isDoctor && !user.doctorId ? "Conta sem médico associado" : "Sem marcações neste dia"}
+              description={
+                isDoctor && !user.doctorId
+                  ? "Peça a um administrador para associar esta conta ao respetivo médico nas Configurações."
+                  : isDoctor
+                    ? "Não existem marcações na sua agenda para este dia."
+                    : "Crie uma nova marcação ou navegue para outro dia."
+              }
             />
           </div>
         ) : (
@@ -160,7 +207,13 @@ export default async function AgendaPage({
                   <TableCell><StatusPill status={a.status} startAt={a.startAt} /></TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end">
-                      <AgendaActions id={a.id} status={a.status} />
+                      <AgendaActions
+                        id={a.id}
+                        status={a.status}
+                        canConduct={can(user.role, "consultation.conduct")}
+                        canManage={can(user.role, "appointment.manage")}
+                        canCheckIn={can(user.role, "appointment.checkin")}
+                      />
                     </div>
                   </TableCell>
                 </TableRow>

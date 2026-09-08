@@ -46,3 +46,60 @@ describe("RBAC permission matrix", () => {
     }
   });
 });
+
+describe("Gestor da Clínica (CLINIC_MANAGER)", () => {
+  it("has Insights and read-only management visibility", () => {
+    expect(can("CLINIC_MANAGER", "insights.view")).toBe(true);
+    expect(can("CLINIC_MANAGER", "dashboard.view")).toBe(true);
+    expect(can("CLINIC_MANAGER", "report.view")).toBe(true);
+    expect(can("CLINIC_MANAGER", "finance.view")).toBe(true);
+    expect(can("CLINIC_MANAGER", "doctor.stats")).toBe(true);
+  });
+
+  it("does NOT get administrative privileges", () => {
+    expect(can("CLINIC_MANAGER", "user.manage")).toBe(false);
+    expect(can("CLINIC_MANAGER", "settings.manage")).toBe(false);
+    expect(can("CLINIC_MANAGER", "audit.view")).toBe(false);
+    expect(can("CLINIC_MANAGER", "fhir.access")).toBe(false);
+  });
+
+  it("does NOT get write access to clinical or financial data", () => {
+    expect(can("CLINIC_MANAGER", "consultation.viewClinical")).toBe(false);
+    expect(can("CLINIC_MANAGER", "consultation.conduct")).toBe(false);
+    expect(can("CLINIC_MANAGER", "prescription.create")).toBe(false);
+    expect(can("CLINIC_MANAGER", "patient.manage")).toBe(false);
+    expect(can("CLINIC_MANAGER", "finance.manage")).toBe(false);
+    expect(can("CLINIC_MANAGER", "appointment.manage")).toBe(false);
+  });
+});
+
+describe("audit access", () => {
+  it("is restricted to system administrators by default", () => {
+    expect(can("SUPER_ADMIN", "audit.view")).toBe(true);
+    expect(can("CLINIC_ADMIN", "audit.view")).toBe(true);
+    for (const role of ["CLINIC_MANAGER", "DOCTOR", "NURSE", "RECEPTIONIST", "FINANCE", "LAB_TECHNICIAN", "PHARMACIST", "INVENTORY_MANAGER"] as const) {
+      expect(can(role, "audit.view")).toBe(false);
+    }
+  });
+});
+
+describe("clinical permissions by role", () => {
+  it("gives nurses vitals and allergies but never prescriptions", () => {
+    expect(can("NURSE", "vitals.record")).toBe(true);
+    expect(can("NURSE", "allergy.manage")).toBe(true);
+    expect(can("NURSE", "prescription.create")).toBe(false);
+    expect(can("NURSE", "consultation.conduct")).toBe(false);
+  });
+
+  it("scopes lab technicians to the laboratory module", () => {
+    expect(can("LAB_TECHNICIAN", "laboratory.manage")).toBe(true);
+    expect(can("LAB_TECHNICIAN", "consultation.viewClinical")).toBe(false);
+    expect(can("LAB_TECHNICIAN", "finance.view")).toBe(false);
+  });
+
+  it("keeps the FHIR API closed to everyone but administrators", () => {
+    expect(can("SUPER_ADMIN", "fhir.access")).toBe(true);
+    expect(can("DOCTOR", "fhir.access")).toBe(false);
+    expect(can("RECEPTIONIST", "fhir.access")).toBe(false);
+  });
+});

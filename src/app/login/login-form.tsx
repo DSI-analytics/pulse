@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useActionState } from "react";
 import { Loader2 } from "lucide-react";
 import { loginAction } from "@/server/auth-actions";
@@ -16,7 +17,10 @@ export function LoginForm() {
         <Input id="email" name="email" type="email" autoComplete="username" placeholder="voce@clinica.mz" required />
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor="password">Palavra-passe</Label>
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password">Palavra-passe</Label>
+          <Link href="/recuperar-senha" className="text-xs font-medium text-primary hover:underline">Esqueci a palavra-passe</Link>
+        </div>
         <Input id="password" name="password" type="password" autoComplete="current-password" placeholder="••••••••" required />
       </div>
       {state?.error && (
