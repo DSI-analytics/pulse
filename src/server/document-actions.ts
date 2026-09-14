@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
 import { removeStoredFile, storeUpload } from "@/lib/documents";
+import { getTranslator } from "@/i18n/server";
 
 export type DocumentActionResult = { ok: true; id: string } | { error: string };
 
@@ -28,16 +29,17 @@ function text(value: FormDataEntryValue | null, max = 500): string | null {
  */
 export async function uploadClinicalDocument(formData: FormData): Promise<DocumentActionResult> {
   const user = await requireUser();
-  if (!can(user.role, "document.manage")) return { error: "Sem permissão para anexar documentos." };
+  const t = await getTranslator();
+  if (!can(user.role, "document.manage")) return { error: t("clinical.documents.noPermissionUpload") };
 
   const patientId = text(formData.get("patientId"), 40);
-  if (!patientId) return { error: "Paciente obrigatório." };
+  if (!patientId) return { error: t("clinical.errors.patientRequired") };
 
   const patient = await prisma.patient.findFirst({
     where: { id: patientId, clinicId: user.clinicId },
     select: { id: true },
   });
-  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient) return { error: t("clinical.errors.patientNotFound") };
 
   const encounterId = text(formData.get("encounterId"), 40);
   const consultationId = text(formData.get("consultationId"), 40);
@@ -47,11 +49,11 @@ export async function uploadClinicalDocument(formData: FormData): Promise<Docume
 
   const scope = { clinicId: user.clinicId, patientId: patient.id };
   const checks: [string | null, () => Promise<unknown>, string][] = [
-    [encounterId, () => prisma.encounter.findFirst({ where: { id: encounterId!, ...scope }, select: { id: true } }), "Episódio inválido."],
-    [consultationId, () => prisma.consultation.findFirst({ where: { id: consultationId!, ...scope }, select: { id: true } }), "Consulta inválida."],
-    [diagnosticOrderId, () => prisma.diagnosticOrder.findFirst({ where: { id: diagnosticOrderId!, ...scope }, select: { id: true } }), "Pedido de exame inválido."],
-    [admissionId, () => prisma.admission.findFirst({ where: { id: admissionId!, ...scope }, select: { id: true } }), "Internamento inválido."],
-    [procedureId, () => prisma.clinicalProcedure.findFirst({ where: { id: procedureId!, ...scope }, select: { id: true } }), "Procedimento inválido."],
+    [encounterId, () => prisma.encounter.findFirst({ where: { id: encounterId!, ...scope }, select: { id: true } }), t("clinical.documents.invalidEncounter")],
+    [consultationId, () => prisma.consultation.findFirst({ where: { id: consultationId!, ...scope }, select: { id: true } }), t("clinical.documents.invalidConsultation")],
+    [diagnosticOrderId, () => prisma.diagnosticOrder.findFirst({ where: { id: diagnosticOrderId!, ...scope }, select: { id: true } }), t("clinical.documents.invalidOrder")],
+    [admissionId, () => prisma.admission.findFirst({ where: { id: admissionId!, ...scope }, select: { id: true } }), t("clinical.documents.invalidAdmission")],
+    [procedureId, () => prisma.clinicalProcedure.findFirst({ where: { id: procedureId!, ...scope }, select: { id: true } }), t("clinical.documents.invalidProcedure")],
   ];
   for (const [value, check, message] of checks) {
     if (!value) continue;
@@ -59,7 +61,7 @@ export async function uploadClinicalDocument(formData: FormData): Promise<Docume
   }
 
   const file = formData.get("file");
-  if (!(file instanceof File)) return { error: "Selecione um ficheiro." };
+  if (!(file instanceof File)) return { error: t("clinical.documents.selectFile") };
 
   const stored = await storeUpload(user.clinicId, file);
   if ("error" in stored) return stored;
@@ -116,13 +118,14 @@ export async function uploadClinicalDocument(formData: FormData): Promise<Docume
 /** Soft delete: sai da vista clínica, o rasto de auditoria permanece. */
 export async function removeClinicalDocument(id: string, reason: string): Promise<DocumentActionResult> {
   const user = await requireUser();
-  if (!can(user.role, "document.manage")) return { error: "Sem permissão para remover documentos." };
+  const t = await getTranslator();
+  if (!can(user.role, "document.manage")) return { error: t("clinical.documents.noPermissionRemove") };
 
   const existing = await prisma.clinicalAttachment.findFirst({
     where: { id, clinicId: user.clinicId, deletedAt: null },
     select: { id: true, patientId: true, name: true, category: true },
   });
-  if (!existing) return { error: "Documento não encontrado." };
+  if (!existing) return { error: t("clinical.documents.notFound") };
 
   await prisma.clinicalAttachment.update({ where: { id: existing.id }, data: { deletedAt: new Date() } });
   await auditAs(

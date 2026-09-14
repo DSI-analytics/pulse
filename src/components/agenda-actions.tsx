@@ -7,6 +7,7 @@ import { setAppointmentStatus } from "@/server/appointment-actions";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/toast";
 import { ClinicalConsultationEditor } from "@/components/clinical-consultation-editor";
+import { useT } from "@/i18n/client";
 
 export function AgendaActions({ id, status, canConduct = false, canManage = false, canCheckIn = false }: {
   id: string;
@@ -17,6 +18,7 @@ export function AgendaActions({ id, status, canConduct = false, canManage = fals
 }) {
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
   const [busy, setBusy] = React.useState(false);
 
   async function run(next: AppointmentStatus, label: string) {
@@ -40,11 +42,11 @@ export function AgendaActions({ id, status, canConduct = false, canManage = fals
   const push = (key: string, node: React.ReactNode) => actions.push(<React.Fragment key={key}>{node}</React.Fragment>);
 
   if (status === "MARCADA" || status === "CONFIRMADA") {
-    if (canCheckIn || canManage) push("in", <Button size="sm" variant="secondary" onClick={() => run("CHEGOU", "Check-in efetuado")}><LogIn className="size-3.5" /> Check-in</Button>);
-    if (canManage) push("cancel", <Button size="sm" variant="ghost" onClick={() => run("CANCELADA", "Marcação cancelada")}><Ban className="size-3.5" /></Button>);
+    if (canCheckIn || canManage) push("in", <Button size="sm" variant="secondary" onClick={() => run("CHEGOU", t("agenda.actions.checkInDone"))}><LogIn className="size-3.5" /> {t("agenda.actions.checkIn")}</Button>);
+    if (canManage) push("cancel", <Button size="sm" variant="ghost" onClick={() => run("CANCELADA", t("agenda.actions.cancelled"))}><Ban className="size-3.5" /></Button>);
   } else if (status === "CHEGOU" || status === "EM_ESPERA") {
-    if (canConduct) push("start", <Button size="sm" variant="secondary" onClick={() => run("EM_CONSULTA", "Consulta iniciada")}><Play className="size-3.5" /> Iniciar</Button>);
-    if (canManage) push("noshow", <Button size="sm" variant="ghost" onClick={() => run("NAO_COMPARECEU", "Registada falta")}><X className="size-3.5" /></Button>);
+    if (canConduct) push("start", <Button size="sm" variant="secondary" onClick={() => run("EM_CONSULTA", t("agenda.actions.started"))}><Play className="size-3.5" /> {t("agenda.actions.start")}</Button>);
+    if (canManage) push("noshow", <Button size="sm" variant="ghost" onClick={() => run("NAO_COMPARECEU", t("agenda.actions.noShowRecorded"))}><X className="size-3.5" /></Button>);
   } else {
     return <span className="text-xs text-subtle-foreground">—</span>;
   }

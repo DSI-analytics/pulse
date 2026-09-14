@@ -8,16 +8,22 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { StatusPill } from "@/components/status-pill";
 import { Stethoscope } from "lucide-react";
-import { formatDatePt } from "@/lib/datetime";
-import { STATUS_LABEL, TYPE_LABEL } from "@/lib/appointment-status";
 import { ListFilters } from "@/components/list-filters";
 import type { AppointmentStatus } from "@prisma/client";
 import { ClinicalConsultationEditor } from "@/components/clinical-consultation-editor";
+import { getFormatters, getTranslator } from "@/i18n/server";
 
 const CONSULTATION_STATUSES: AppointmentStatus[] = ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA", "EM_CONSULTA", "CONCLUIDA"];
 
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("consultations.title") };
+}
+
 export default async function ConsultasPage({ searchParams }: { searchParams: Promise<{ q?: string; estado?: string; medico?: string; especialidade?: string }> }) {
   const user = await requirePermission("appointment.view");
+  const t = await getTranslator();
+  const f = await getFormatters();
   const showClinical = can(user.role, "consultation.viewClinical");
   const canConduct = can(user.role, "consultation.conduct");
   const sp = await searchParams;
@@ -51,35 +57,35 @@ export default async function ConsultasPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <PageHeader eyebrow="Operação" title="Consultas" description="Consultas agendadas e registos clínicos." />
+      <PageHeader eyebrow={t("nav.groups.operation")} title={t("consultations.title")} description={t("consultations.description")} />
       <ListFilters action="/consultas" fields={[
-        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome do paciente…" },
-        { name: "estado", label: "Estado", value: status, options: CONSULTATION_STATUSES.map((value) => ({ value, label: STATUS_LABEL[value] })) },
-        ...(!isDoctor ? [{ name: "medico", label: "Médico", value: sp.medico, options: doctors.map((doctor) => ({ value: doctor.id, label: doctor.name })) }] : []),
-        { name: "especialidade", label: "Especialidade", value: sp.especialidade, options: specialties.map((specialty) => ({ value: specialty.id, label: specialty.name })) },
+        { name: "q", label: t("agenda.filters.search"), value: query, type: "search", placeholder: t("agenda.filters.searchPlaceholder") },
+        { name: "estado", label: t("agenda.filters.status"), value: status, options: CONSULTATION_STATUSES.map((value) => ({ value, label: t(`appointmentStatus.${value}`) })) },
+        ...(!isDoctor ? [{ name: "medico", label: t("agenda.filters.doctor"), value: sp.medico, options: doctors.map((doctor) => ({ value: doctor.id, label: doctor.name })) }] : []),
+        { name: "especialidade", label: t("agenda.filters.specialty"), value: sp.especialidade, options: specialties.map((specialty) => ({ value: specialty.id, label: specialty.name })) },
       ]} />
       <Card>
         <CardContent className="p-0">
           {consultations.length === 0 ? (
-            <div className="p-6"><EmptyState icon={Stethoscope} title="Sem consultas registadas" /></div>
+            <div className="p-6"><EmptyState icon={Stethoscope} title={t("consultations.empty")} /></div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Paciente</TableHead>
-                  <TableHead>Médico</TableHead>
-                  <TableHead>Especialidade</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Notas clínicas</TableHead>
-                  {canConduct && <TableHead className="text-right">Ações</TableHead>}
+                  <TableHead>{t("consultations.columns.date")}</TableHead>
+                  <TableHead>{t("consultations.columns.patient")}</TableHead>
+                  <TableHead>{t("consultations.columns.doctor")}</TableHead>
+                  <TableHead>{t("consultations.columns.specialty")}</TableHead>
+                  <TableHead>{t("consultations.columns.type")}</TableHead>
+                  <TableHead>{t("consultations.columns.status")}</TableHead>
+                  <TableHead>{t("consultations.columns.clinicalNotes")}</TableHead>
+                  {canConduct && <TableHead className="text-right">{t("consultations.columns.actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {consultations.map((c) => (
                   <TableRow key={c.id}>
-                    <TableCell className="text-[13px] text-muted-foreground">{formatDatePt(c.startedAt)}</TableCell>
+                    <TableCell className="text-[13px] text-muted-foreground">{f.dateMedium(c.startedAt)}</TableCell>
                     <TableCell className="font-medium">{c.patient.name}</TableCell>
                     <TableCell className="text-[13px] text-muted-foreground">{c.doctor.name}</TableCell>
                     <TableCell>
@@ -88,10 +94,10 @@ export default async function ConsultasPage({ searchParams }: { searchParams: Pr
                         {c.appointment.specialty.name}
                       </span>
                     </TableCell>
-                    <TableCell><Badge variant="neutral">{TYPE_LABEL[c.appointment.type]}</Badge></TableCell>
+                    <TableCell><Badge variant="neutral">{t(`agenda.types.${c.appointment.type}`)}</Badge></TableCell>
                     <TableCell><StatusPill status={c.appointment.status} startAt={c.appointment.startAt} /></TableCell>
                     <TableCell className="max-w-xs truncate text-[13px] text-muted-foreground">
-                      {showClinical ? c.notes || c.diagnosis || "—" : <span className="italic">Restrito</span>}
+                      {showClinical ? c.notes || c.diagnosis || "—" : <span className="italic">{t("consultations.restricted")}</span>}
                     </TableCell>
                     {canConduct && (
                       <TableCell className="text-right">

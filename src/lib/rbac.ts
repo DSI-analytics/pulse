@@ -1,4 +1,5 @@
 import type { UserRole } from "@prisma/client";
+import type { MessageKey } from "@/i18n/types";
 
 // Permission catalog. Built-in roles map to sets of these keys. The Role table
 // in the schema lets tenants define custom roles over the same catalog later.
@@ -213,6 +214,32 @@ export function permissionsOf(role: UserRole): Permission[] {
   return [...(ROLE_PERMISSIONS[role] ?? [])].sort();
 }
 
+/** Chave de tradução da descrição de uma permissão: "patient.view" → "permissions.patient_view". */
+export function permissionMessageKey(permission: Permission): MessageKey {
+  return `permissions.${permission.replace(".", "_")}` as MessageKey;
+}
+
+const CATEGORY_KEYS: Record<string, string> = {
+  Geral: "general",
+  Agenda: "agenda",
+  "Prontuário": "record",
+  "Laboratório": "laboratory",
+  Documentos: "documents",
+  "Gestão": "management",
+  Financeiro: "finance",
+  Stock: "stock",
+  Sistema: "system",
+};
+
+/** Chave de tradução da categoria de uma permissão (ex.: "permissions.categories.system"). */
+export function permissionCategoryMessageKey(permission: Permission): MessageKey {
+  return `permissions.categories.${CATEGORY_KEYS[PERMISSION_CATEGORY[permission]]}` as MessageKey;
+}
+
+/**
+ * Rótulos PT dos perfis — mantidos por compatibilidade (testes, código antigo).
+ * Na interface use o dicionário: `t(\`roles.${role}\`)`.
+ */
 export const ROLE_LABELS: Record<UserRole, string> = {
   SUPER_ADMIN: "Super Admin",
   CLINIC_ADMIN: "Administrador",

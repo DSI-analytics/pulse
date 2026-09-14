@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import { CircleDashed } from "lucide-react";
+import { getTranslator } from "@/i18n/server";
 
 export function DashboardSection({
   title,
@@ -14,12 +15,12 @@ export function DashboardSection({
 }) {
   return (
     <section className="space-y-3" aria-labelledby={`section-${title.replaceAll(" ", "-").toLowerCase()}`}>
-      <div className="flex items-start gap-3 border-b border-border pb-3">
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-surface-2 text-primary">
+      <div className="flex items-start gap-3 pb-1">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary-muted text-primary">
           <Icon className="size-4" aria-hidden />
         </span>
         <div>
-          <h2 id={`section-${title.replaceAll(" ", "-").toLowerCase()}`} className="text-base font-semibold">{title}</h2>
+          <h2 id={`section-${title.replaceAll(" ", "-").toLowerCase()}`} className="text-base font-semibold tracking-[-0.01em]">{title}</h2>
           <p className="mt-0.5 text-[13px] text-muted-foreground">{description}</p>
         </div>
       </div>
@@ -28,11 +29,12 @@ export function DashboardSection({
   );
 }
 
-export function DataGap({ labels }: { labels: string[] }) {
+export async function DataGap({ labels }: { labels: string[] }) {
+  const t = await getTranslator();
   return (
-    <div className="flex items-start gap-2 rounded-md border border-dashed border-border-strong bg-surface-2 px-3 py-2.5 text-[12px] text-muted-foreground">
+    <div className="flex items-start gap-2 rounded-[14px] bg-fill-subtle px-3.5 py-3 text-[12px] text-muted-foreground">
       <CircleDashed className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-      <p><span className="font-medium text-foreground">Sem dados estruturados:</span> {labels.join(", ")}.</p>
+      <p><span className="font-medium text-foreground">{t("common.noStructuredData")}</span> {labels.join(", ")}.</p>
     </div>
   );
 }

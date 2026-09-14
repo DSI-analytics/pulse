@@ -1,0 +1,47 @@
+import type { Messages } from "../../types";
+
+/** English translations for the "catalog" module. Must mirror ../pt/catalog.ts. */
+const catalog: Messages["catalog"] = {
+  eyebrow: "Management",
+  search: "Search",
+  status: "Status",
+  actions: "Actions",
+  errors: {
+    noPermission: "You do not have permission for this operation.",
+    patientNotFound: "Patient not found.",
+    patientAlreadyInactive: "This patient is already inactive.",
+    patientUpcoming: "Cancel this patient's upcoming appointments first.",
+    specialtyName: "Enter the specialty name.",
+    specialtyDuplicate: "A specialty with that name already exists.",
+    specialtyNotFound: "Specialty not found.",
+    specialtyInUse: "You cannot delete a specialty that has doctors assigned.",
+    specialtyRequired: "Select the specialty.",
+    specialtyInvalid: "Invalid specialty.",
+    doctorName: "Enter the doctor's name.",
+    doctorNotFound: "Doctor not found.",
+    doctorDeleteFailed: "Could not delete the doctor.",
+    supplierName: "Enter the supplier name.",
+    supplierNotFound: "Supplier not found.",
+    supplierInUse: "You cannot delete a supplier with linked purchases or items.",
+    insurerRequired: "Select the insurer.",
+    insurerInvalid: "Invalid insurer.",
+    planName: "Enter the plan name.",
+    planNotFound: "Plan not found.",
+    planInUse: "You cannot delete a plan that is still in use.",
+    itemName: "Enter the item name.",
+    skuRequired: "Enter the SKU.",
+    skuDuplicate: "An item with that SKU already exists.",
+    itemNotFound: "Item not found.",
+    itemInUse: "You cannot delete an item with linked movements or purchases.",
+    serviceName: "Enter the service name.",
+    serviceDuplicate: "A service with that name already exists.",
+    serviceNotFound: "Service not found.",
+    serviceInUse: "You cannot delete a service with linked appointments or invoices.",
+    invalidPrice: "Enter a valid price.",
+    invalidAmount: "Enter a valid amount.",
+    expenseDescription: "Enter the expense description.",
+    expenseNotFound: "Expense not found.",
+  },
+};
+
+export default catalog;

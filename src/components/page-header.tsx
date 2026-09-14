@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 
+/** Título grande, ao estilo "large title" do iOS: forte, curto, com ar à volta. */
 export function PageHeader({
   title,
   description,
@@ -14,18 +15,15 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-wrap items-end justify-between gap-4", className)}>
-      <div>
+    <div className={cn("flex flex-wrap items-end justify-between gap-x-4 gap-y-3 pt-1", className)}>
+      <div className="min-w-0">
         {eyebrow && (
-          <p className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-primary">
-            <span className="h-0.5 w-3.5 rounded bg-primary" />
-            {eyebrow}
-          </p>
+          <p className="mb-1.5 text-[12px] font-medium uppercase tracking-[0.08em] text-primary">{eyebrow}</p>
         )}
-        <h1 className="font-display text-[26px] font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+        <h1 className="font-display text-[28px] font-bold leading-[1.1] tracking-[-0.025em] sm:text-[32px]">{title}</h1>
+        {description && <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
     </div>
   );
 }

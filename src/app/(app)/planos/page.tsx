@@ -8,11 +8,17 @@ import { createHealthPlanRecord, deleteHealthPlanRecord, updateHealthPlanRecord 
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { formatMZN } from "@/lib/money";
 import { ListFilters } from "@/components/list-filters";
+import { getFormatters, getTranslator } from "@/i18n/server";
+
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("plans.title") };
+}
 
 export default async function PlanosPage({ searchParams }: { searchParams: Promise<{ q?: string; seguradora?: string; estado?: string }> }) {
   const user = await requirePermission("healthplan.view");
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
   const sp = await searchParams;
   const query = (sp.q ?? "").trim();
   const isActive = sp.estado === "ativo" ? true : sp.estado === "inativo" ? false : undefined;
@@ -64,20 +70,20 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
   return (
     <>
       <PageHeader
-        eyebrow="Gestão"
-        title="Planos de Saúde"
-        description={`${plans.length} planos · ${formatMZN(totalPending)} por receber de seguradoras`}
+        eyebrow={t("catalog.eyebrow")}
+        title={t("plans.title")}
+        description={t("plans.description", { count: plans.length, amount: f.money(totalPending) })}
         actions={
           can(user.role, "healthplan.manage") ? (
             <CadastroButton
-              label="Novo plano"
-              title="Novo plano de saúde"
+              label={t("plans.newPlan")}
+              title={t("plans.newPlanTitle")}
               action={createHealthPlanRecord}
               fields={[
-                { name: "insuranceCompanyId", label: "Seguradora", type: "select", required: true, full: true, options: insurers.map((i) => ({ value: i.id, label: i.name })) },
-                { name: "name", label: "Nome do plano", required: true, placeholder: "Ex.: Executivo" },
-                { name: "contractPrice", label: "Preço de contrato", type: "money", required: true, suffix: "MZN", placeholder: "2000" },
-                { name: "patientCopay", label: "Co-pagamento", type: "money", suffix: "MZN", placeholder: "200" },
+                { name: "insuranceCompanyId", label: t("plans.fields.insurer"), type: "select", required: true, full: true, options: insurers.map((i) => ({ value: i.id, label: i.name })) },
+                { name: "name", label: t("plans.fields.name"), required: true, placeholder: t("plans.fields.namePlaceholder") },
+                { name: "contractPrice", label: t("plans.fields.contractPrice"), type: "money", required: true, suffix: f.currency, placeholder: "2000" },
+                { name: "patientCopay", label: t("plans.fields.copay"), type: "money", suffix: f.currency, placeholder: "200" },
               ]}
             />
           ) : undefined
@@ -85,9 +91,9 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
       />
 
       <ListFilters action="/planos" fields={[
-        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome do plano…" },
-        { name: "seguradora", label: "Seguradora", value: sp.seguradora, options: insurers.map((insurer) => ({ value: insurer.id, label: insurer.name })) },
-        { name: "estado", label: "Estado", value: sp.estado, options: [{ value: "ativo", label: "Activo" }, { value: "inativo", label: "Inactivo" }] },
+        { name: "q", label: t("catalog.search"), value: query, type: "search", placeholder: t("plans.searchPlaceholder") },
+        { name: "seguradora", label: t("plans.fields.insurer"), value: sp.seguradora, options: insurers.map((insurer) => ({ value: insurer.id, label: insurer.name })) },
+        { name: "estado", label: t("catalog.status"), value: sp.estado, options: [{ value: "ativo", label: t("common.active") }, { value: "inativo", label: t("common.inactive") }] },
       ]} />
 
       <Card>
@@ -95,14 +101,14 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Seguradora / Plano</TableHead>
-                <TableHead className="text-right">Consultas</TableHead>
-                <TableHead className="text-right">Facturado</TableHead>
-                <TableHead className="text-right">Recebido</TableHead>
-                <TableHead className="text-right">Por receber</TableHead>
-                <TableHead className="text-right">Prazo</TableHead>
-                <TableHead>Estado</TableHead>
-                {can(user.role, "healthplan.manage") && <TableHead className="text-right">Ações</TableHead>}
+                <TableHead>{t("plans.columns.insurerPlan")}</TableHead>
+                <TableHead className="text-right">{t("plans.columns.consultations")}</TableHead>
+                <TableHead className="text-right">{t("plans.columns.billed")}</TableHead>
+                <TableHead className="text-right">{t("plans.columns.received")}</TableHead>
+                <TableHead className="text-right">{t("plans.columns.pending")}</TableHead>
+                <TableHead className="text-right">{t("plans.columns.term")}</TableHead>
+                <TableHead>{t("catalog.status")}</TableHead>
+                {can(user.role, "healthplan.manage") && <TableHead className="text-right">{t("catalog.actions")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -110,25 +116,25 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
                 <TableRow key={p.id}>
                   <TableCell>
                     <p className="font-medium">{p.insuranceCompany.name}</p>
-                    <p className="text-[12px] text-muted-foreground">{p.name} · contrato {formatMZN(p.contractPrice)}</p>
+                    <p className="text-[12px] text-muted-foreground">{t("plans.contractLine", { plan: p.name, price: f.money(p.contractPrice) })}</p>
                   </TableCell>
                   <TableCell className="text-right tabular">{consultas}</TableCell>
-                  <TableCell className="text-right tabular">{formatMZN(billed)}</TableCell>
-                  <TableCell className="text-right tabular text-success">{formatMZN(received)}</TableCell>
-                  <TableCell className="text-right tabular font-medium text-danger">{formatMZN(pending)}</TableCell>
-                  <TableCell className="text-right tabular text-muted-foreground">{p.insuranceCompany.paymentTermDays}d</TableCell>
-                  <TableCell><Badge variant={p.isActive ? "success" : "neutral"}>{p.isActive ? "Activo" : "Inactivo"}</Badge></TableCell>
+                  <TableCell className="text-right tabular">{f.money(billed)}</TableCell>
+                  <TableCell className="text-right tabular text-success">{f.money(received)}</TableCell>
+                  <TableCell className="text-right tabular font-medium text-danger">{f.money(pending)}</TableCell>
+                  <TableCell className="text-right tabular text-muted-foreground">{t("plans.termDays", { days: p.insuranceCompany.paymentTermDays })}</TableCell>
+                  <TableCell><Badge variant={p.isActive ? "success" : "neutral"}>{p.isActive ? t("common.active") : t("common.inactive")}</Badge></TableCell>
                   {can(user.role, "healthplan.manage") && (
                     <TableCell className="text-right">
                       <TableRecordCrudCell
                         id={p.id}
-                        title="Editar plano"
-                        description="Atualize os dados do plano de saúde."
+                        title={t("plans.editTitle")}
+                        description={t("plans.editDescription")}
                         fields={[
-                          { name: "insuranceCompanyId", label: "Seguradora", type: "select", required: true, defaultValue: p.insuranceCompanyId, options: insurers.map((i) => ({ value: i.id, label: i.name })) },
-                          { name: "name", label: "Nome do plano", required: true, defaultValue: p.name },
-                          { name: "contractPrice", label: "Preço de contrato", type: "money", required: true, defaultValue: String(p.contractPrice), suffix: "MZN" },
-                          { name: "patientCopay", label: "Co-pagamento", type: "money", defaultValue: String(p.patientCopay), suffix: "MZN" },
+                          { name: "insuranceCompanyId", label: t("plans.fields.insurer"), type: "select", required: true, defaultValue: p.insuranceCompanyId, options: insurers.map((i) => ({ value: i.id, label: i.name })) },
+                          { name: "name", label: t("plans.fields.name"), required: true, defaultValue: p.name },
+                          { name: "contractPrice", label: t("plans.fields.contractPrice"), type: "money", required: true, defaultValue: String(p.contractPrice), suffix: f.currency },
+                          { name: "patientCopay", label: t("plans.fields.copay"), type: "money", defaultValue: String(p.patientCopay), suffix: f.currency },
                         ]}
                         updateAction={updateHealthPlanRecord}
                         deleteAction={deleteHealthPlanRecord}
@@ -137,7 +143,7 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
                   )}
                 </TableRow>
               ))}
-              {rows.length === 0 && <TableRow><TableCell colSpan={can(user.role, "healthplan.manage") ? 8 : 7} className="py-8 text-center text-sm text-muted-foreground">Nenhum plano corresponde aos filtros.</TableCell></TableRow>}
+              {rows.length === 0 && <TableRow><TableCell colSpan={can(user.role, "healthplan.manage") ? 8 : 7} className="py-8 text-center text-sm text-muted-foreground">{t("plans.empty")}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>

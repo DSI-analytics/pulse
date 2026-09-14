@@ -17,18 +17,18 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border-strong px-6 py-12 text-center",
+        "flex flex-col items-center justify-center gap-3 rounded-2xl bg-fill-subtle px-6 py-14 text-center",
         className,
       )}
     >
       {Icon && (
-        <div className="flex size-11 items-center justify-center rounded-full bg-surface-2 text-muted-foreground">
+        <div className="glass-thin flex size-12 items-center justify-center rounded-full text-subtle-foreground">
           <Icon className="size-5" />
         </div>
       )}
       <div className="space-y-1">
         <p className="font-medium text-foreground">{title}</p>
-        {description && <p className="mx-auto max-w-sm text-sm text-muted-foreground">{description}</p>}
+        {description && <p className="mx-auto max-w-sm text-sm leading-relaxed text-muted-foreground">{description}</p>}
       </div>
       {action}
     </div>

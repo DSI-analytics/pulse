@@ -9,20 +9,29 @@ import { createSupplierRecord, deleteSupplierRecord, updateSupplierRecord } from
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { formatMZN } from "@/lib/money";
-import { formatDateShort } from "@/lib/datetime";
 import { ListFilters } from "@/components/list-filters";
 import type { PaymentTermsStatus, PurchaseStatus } from "@prisma/client";
+import { getFormatters, getTranslator } from "@/i18n/server";
 
-const PURCHASE_STATUSES: PurchaseStatus[] = ["ENCOMENDADA", "RECEBIDA", "PARCIAL", "CANCELADA"];
-const PAYMENT_STATUSES: PaymentTermsStatus[] = ["PENDENTE", "PARCIAL", "PAGO"];
+const PURCHASE_STATUSES = ["ENCOMENDADA", "RECEBIDA", "PARCIAL", "CANCELADA"] as const satisfies readonly PurchaseStatus[];
+const PAYMENT_STATUSES = ["PENDENTE", "PARCIAL", "PAGO"] as const satisfies readonly PaymentTermsStatus[];
+
+function pick<T extends string>(list: readonly T[], value: string | undefined): T | undefined {
+  return list.includes(value as T) ? (value as T) : undefined;
+}
+
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("suppliers.title") };
+}
 
 export default async function FornecedoresPage({ searchParams }: { searchParams: Promise<{ q?: string; categoria?: string; divida?: string; compra?: string; pagamento?: string }> }) {
   const user = await requirePermission("supplier.view");
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
   const sp = await searchParams;
   const query = (sp.q ?? "").trim();
-  const purchaseStatus = PURCHASE_STATUSES.includes(sp.compra as PurchaseStatus) ? sp.compra as PurchaseStatus : undefined;
-  const paymentStatus = PAYMENT_STATUSES.includes(sp.pagamento as PaymentTermsStatus) ? sp.pagamento as PaymentTermsStatus : undefined;
+  const purchaseStatus = pick(PURCHASE_STATUSES, sp.compra);
+  const paymentStatus = pick(PAYMENT_STATUSES, sp.pagamento);
   const [suppliers, purchases, categoryRows] = await Promise.all([
     prisma.supplier.findMany({
       where: {
@@ -72,25 +81,25 @@ export default async function FornecedoresPage({ searchParams }: { searchParams:
   return (
     <>
       <PageHeader
-        eyebrow="Gestão"
-        title="Fornecedores"
-        description={`${rows.length} fornecedores`}
+        eyebrow={t("suppliers.eyebrow")}
+        title={t("suppliers.title")}
+        description={t("suppliers.count", { count: rows.length })}
         actions={
           can(user.role, "supplier.manage") ? (
             <>
             <NovaCompra />
             <CadastroButton
               variant="secondary"
-              label="Novo fornecedor"
-              title="Novo fornecedor"
+              label={t("suppliers.new")}
+              title={t("suppliers.new")}
               action={createSupplierRecord}
               fields={[
-                { name: "name", label: "Nome", required: true, full: true },
-                { name: "category", label: "Categoria", placeholder: "Ex.: Medicamentos" },
-                { name: "contactName", label: "Pessoa de contacto" },
-                { name: "phone", label: "Telefone", type: "tel" },
-                { name: "email", label: "Email", type: "email" },
-                { name: "paymentTerms", label: "Condições de pagamento", placeholder: "30 dias" },
+                { name: "name", label: t("suppliers.fields.name"), required: true, full: true },
+                { name: "category", label: t("suppliers.fields.category"), placeholder: t("suppliers.fields.categoryPlaceholder") },
+                { name: "contactName", label: t("suppliers.fields.contactName") },
+                { name: "phone", label: t("suppliers.fields.phone"), type: "tel" },
+                { name: "email", label: t("suppliers.fields.email"), type: "email" },
+                { name: "paymentTerms", label: t("suppliers.fields.paymentTerms"), placeholder: t("suppliers.fields.paymentTermsPlaceholder") },
               ]}
             />
             </>
@@ -98,25 +107,25 @@ export default async function FornecedoresPage({ searchParams }: { searchParams:
         }
       />
       <ListFilters action="/fornecedores" fields={[
-        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Fornecedor, contacto ou factura…" },
-        { name: "categoria", label: "Categoria", value: sp.categoria, options: categoryRows.flatMap(({ category }) => category ? [{ value: category, label: category }] : []) },
-        { name: "divida", label: "Dívida", value: sp.divida, options: [{ value: "sim", label: "Com dívida" }] },
-        { name: "compra", label: "Estado da compra", value: purchaseStatus, options: PURCHASE_STATUSES.map((value) => ({ value, label: value.replaceAll("_", " ") })) },
-        { name: "pagamento", label: "Pagamento", value: paymentStatus, options: PAYMENT_STATUSES.map((value) => ({ value, label: value })) },
+        { name: "q", label: t("suppliers.filters.search"), value: query, type: "search", placeholder: t("suppliers.filters.searchPlaceholder") },
+        { name: "categoria", label: t("suppliers.filters.category"), value: sp.categoria, options: categoryRows.flatMap(({ category }) => category ? [{ value: category, label: category }] : []) },
+        { name: "divida", label: t("suppliers.filters.debt"), value: sp.divida, options: [{ value: "sim", label: t("suppliers.filters.withDebt") }] },
+        { name: "compra", label: t("suppliers.filters.purchaseStatus"), value: purchaseStatus, options: PURCHASE_STATUSES.map((value) => ({ value, label: t(`suppliers.filterOptions.purchaseStatus.${value}`) })) },
+        { name: "pagamento", label: t("suppliers.filters.payment"), value: paymentStatus, options: PAYMENT_STATUSES.map((value) => ({ value, label: t(`suppliers.filterOptions.paymentStatus.${value}`) })) },
       ]} />
       <Card>
         <CardContent className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Fornecedor</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead>Contacto</TableHead>
-                <TableHead className="text-right">Compras</TableHead>
-                <TableHead className="text-right">Total comprado</TableHead>
-                <TableHead className="text-right">Em dívida</TableHead>
-                <TableHead>Última compra</TableHead>
-                {can(user.role, "supplier.manage") && <TableHead className="text-right">Ações</TableHead>}
+                <TableHead>{t("suppliers.columns.supplier")}</TableHead>
+                <TableHead>{t("suppliers.columns.category")}</TableHead>
+                <TableHead>{t("suppliers.columns.contact")}</TableHead>
+                <TableHead className="text-right">{t("suppliers.columns.purchases")}</TableHead>
+                <TableHead className="text-right">{t("suppliers.columns.totalPurchased")}</TableHead>
+                <TableHead className="text-right">{t("suppliers.columns.outstanding")}</TableHead>
+                <TableHead>{t("suppliers.columns.lastPurchase")}</TableHead>
+                {can(user.role, "supplier.manage") && <TableHead className="text-right">{t("suppliers.actions")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -129,24 +138,24 @@ export default async function FornecedoresPage({ searchParams }: { searchParams:
                   <TableCell><Badge variant="neutral">{s.category ?? "—"}</Badge></TableCell>
                   <TableCell className="text-[13px] text-muted-foreground">{s.phone ?? s.email ?? "—"}</TableCell>
                   <TableCell className="text-right tabular">{orders}</TableCell>
-                  <TableCell className="text-right tabular">{formatMZN(totalPurchased)}</TableCell>
+                  <TableCell className="text-right tabular">{f.money(totalPurchased)}</TableCell>
                   <TableCell className="text-right tabular">
-                    {outstanding > 0 ? <span className="font-medium text-danger">{formatMZN(outstanding)}</span> : <span className="text-muted-foreground">—</span>}
+                    {outstanding > 0 ? <span className="font-medium text-danger">{f.money(outstanding)}</span> : <span className="text-muted-foreground">—</span>}
                   </TableCell>
-                  <TableCell className="text-[13px] text-muted-foreground">{last ? formatDateShort(last) : "—"}</TableCell>
+                  <TableCell className="text-[13px] text-muted-foreground">{last ? f.date(last) : "—"}</TableCell>
                   {can(user.role, "supplier.manage") && (
                     <TableCell className="text-right">
                       <TableRecordCrudCell
                         id={s.id}
-                        title="Editar fornecedor"
-                        description="Atualize os dados do fornecedor."
+                        title={t("suppliers.edit")}
+                        description={t("suppliers.editDescription")}
                         fields={[
-                          { name: "name", label: "Nome", required: true, defaultValue: s.name },
-                          { name: "category", label: "Categoria", defaultValue: s.category ?? "" },
-                          { name: "contactName", label: "Pessoa de contacto", defaultValue: s.contactName ?? "" },
-                          { name: "phone", label: "Telefone", type: "tel", defaultValue: s.phone ?? "" },
-                          { name: "email", label: "Email", type: "email", defaultValue: s.email ?? "" },
-                          { name: "paymentTerms", label: "Condições de pagamento", defaultValue: s.paymentTerms ?? "" },
+                          { name: "name", label: t("suppliers.fields.name"), required: true, defaultValue: s.name },
+                          { name: "category", label: t("suppliers.fields.category"), defaultValue: s.category ?? "" },
+                          { name: "contactName", label: t("suppliers.fields.contactName"), defaultValue: s.contactName ?? "" },
+                          { name: "phone", label: t("suppliers.fields.phone"), type: "tel", defaultValue: s.phone ?? "" },
+                          { name: "email", label: t("suppliers.fields.email"), type: "email", defaultValue: s.email ?? "" },
+                          { name: "paymentTerms", label: t("suppliers.fields.paymentTerms"), defaultValue: s.paymentTerms ?? "" },
                         ]}
                         updateAction={updateSupplierRecord}
                         deleteAction={deleteSupplierRecord}
@@ -155,50 +164,50 @@ export default async function FornecedoresPage({ searchParams }: { searchParams:
                   )}
                 </TableRow>
               ))}
-              {rows.length === 0 && <TableRow><TableCell colSpan={can(user.role, "supplier.manage") ? 8 : 7} className="py-8 text-center text-sm text-muted-foreground">Nenhum fornecedor corresponde aos filtros.</TableCell></TableRow>}
+              {rows.length === 0 && <TableRow><TableCell colSpan={can(user.role, "supplier.manage") ? 8 : 7} className="py-8 text-center text-sm text-muted-foreground">{t("suppliers.empty")}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle>Compras recentes</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle>{t("suppliers.purchases.title")}</CardTitle></CardHeader>
         <CardContent className="pt-0">
           {purchases.length === 0 ? (
             <p className="py-3 text-sm text-muted-foreground">
-              Ainda não há compras registadas. Use “Registar compra” para dar entrada de material no stock.
+              {t("suppliers.purchases.empty")}
             </p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Fornecedor</TableHead>
-                  <TableHead>Factura</TableHead>
-                  <TableHead className="text-right">Artigos</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead>Pagamento</TableHead>
-                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead>{t("suppliers.purchases.columns.date")}</TableHead>
+                  <TableHead>{t("suppliers.purchases.columns.supplier")}</TableHead>
+                  <TableHead>{t("suppliers.purchases.columns.invoice")}</TableHead>
+                  <TableHead className="text-right">{t("suppliers.purchases.columns.items")}</TableHead>
+                  <TableHead>{t("suppliers.purchases.columns.status")}</TableHead>
+                  <TableHead>{t("suppliers.purchases.columns.payment")}</TableHead>
+                  <TableHead className="text-right">{t("suppliers.purchases.columns.total")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {purchases.map((p) => (
                   <TableRow key={p.id}>
-                    <TableCell className="text-[13px] text-muted-foreground">{formatDateShort(p.orderedAt)}</TableCell>
+                    <TableCell className="text-[13px] text-muted-foreground">{f.date(p.orderedAt)}</TableCell>
                     <TableCell className="font-medium">{p.supplier.name}</TableCell>
                     <TableCell className="font-mono text-[12px] text-muted-foreground">{p.invoiceNumber ?? "—"}</TableCell>
                     <TableCell className="text-right tabular">{p._count.items}</TableCell>
                     <TableCell>
                       <Badge variant={p.status === "RECEBIDA" ? "success" : p.status === "CANCELADA" ? "neutral" : "warning"}>
-                        {p.status === "RECEBIDA" ? "Recebida" : p.status === "ENCOMENDADA" ? "Encomendada" : p.status === "PARCIAL" ? "Parcial" : "Cancelada"}
+                        {p.status === "RECEBIDA" ? t("suppliers.purchaseStatus.RECEBIDA") : p.status === "ENCOMENDADA" ? t("suppliers.purchaseStatus.ENCOMENDADA") : p.status === "PARCIAL" ? t("suppliers.purchaseStatus.PARCIAL") : t("suppliers.purchaseStatus.CANCELADA")}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant={p.paymentStatus === "PAGO" ? "success" : "warning"}>
-                        {p.paymentStatus === "PAGO" ? "Pago" : p.paymentStatus === "PARCIAL" ? "Parcial" : "Pendente"}
+                        {p.paymentStatus === "PAGO" ? t("suppliers.paymentStatus.PAGO") : p.paymentStatus === "PARCIAL" ? t("suppliers.paymentStatus.PARCIAL") : t("suppliers.paymentStatus.PENDENTE")}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right font-medium tabular">{formatMZN(p.total)}</TableCell>
+                    <TableCell className="text-right font-medium tabular">{f.money(p.total)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

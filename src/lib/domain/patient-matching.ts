@@ -4,6 +4,12 @@
 // automaticamente: apresenta candidatos a quem está a fazer o cadastro, que
 // decide. A fusão é uma operação explícita e auditada.
 
+import pt from "../../i18n/messages/pt";
+import { createTranslator, type Translator } from "../../i18n/translate";
+
+/** Tradutor por omissão (português), para chamadores sem contexto de idioma. */
+const defaultT: Translator = createTranslator(pt);
+
 export interface PatientIdentity {
   id?: string;
   code?: string | null;
@@ -82,7 +88,12 @@ export const DUPLICATE_THRESHOLD = 70;
 /** Abaixo deste valor o candidato não é sequer apresentado. */
 export const SUGGESTION_THRESHOLD = 45;
 
-export function scoreMatch(a: PatientIdentity, b: PatientIdentity): { score: number; reasons: string[] } {
+/** Pontua a semelhança entre dois registos. Os motivos vêm no idioma de `t` (português por omissão). */
+export function scoreMatch(
+  a: PatientIdentity,
+  b: PatientIdentity,
+  t: Translator = defaultT,
+): { score: number; reasons: string[] } {
   const reasons: string[] = [];
   let score = 0;
 
@@ -91,7 +102,7 @@ export function scoreMatch(a: PatientIdentity, b: PatientIdentity): { score: num
   for (const doc of docsA) {
     if (docsB.has(doc)) {
       score += WEIGHTS.document;
-      reasons.push("Documento de identificação igual");
+      reasons.push(t("patients.matching.sameDocument"));
       break;
     }
   }
@@ -101,7 +112,7 @@ export function scoreMatch(a: PatientIdentity, b: PatientIdentity): { score: num
   for (const phone of phonesA) {
     if (phonesB.has(phone)) {
       score += WEIGHTS.phone;
-      reasons.push("Telefone igual");
+      reasons.push(t("patients.matching.samePhone"));
       break;
     }
   }
@@ -110,24 +121,24 @@ export function scoreMatch(a: PatientIdentity, b: PatientIdentity): { score: num
   const emailB = (b.email ?? "").trim().toLowerCase();
   if (emailA && emailA === emailB) {
     score += WEIGHTS.email;
-    reasons.push("E-mail igual");
+    reasons.push(t("patients.matching.sameEmail"));
   }
 
   const keyA = nameKey(a.name);
   const keyB = nameKey(b.name);
   if (keyA && keyA === keyB) {
     score += WEIGHTS.exactName;
-    reasons.push("Nome igual");
+    reasons.push(t("patients.matching.sameName"));
   } else if (tokenOverlap(keyA, keyB) >= 0.6) {
     score += WEIGHTS.partialName;
-    reasons.push("Nome muito semelhante");
+    reasons.push(t("patients.matching.similarName"));
   }
 
   const birthA = isoDay(a.birthDate);
   const birthB = isoDay(b.birthDate);
   if (birthA && birthA === birthB) {
     score += WEIGHTS.birthDate;
-    reasons.push("Data de nascimento igual");
+    reasons.push(t("patients.matching.sameBirthDate"));
   } else if (birthA && birthB) {
     // Datas de nascimento diferentes são forte evidência de pessoas distintas.
     score -= 20;
@@ -144,10 +155,11 @@ export function rankDuplicates(
   subject: PatientIdentity,
   candidates: PatientIdentity[],
   threshold = SUGGESTION_THRESHOLD,
+  t: Translator = defaultT,
 ): DuplicateCandidate[] {
   return candidates
     .filter((c) => c.id && c.id !== subject.id)
-    .map((c) => ({ id: c.id!, ...scoreMatch(subject, c) }))
+    .map((c) => ({ id: c.id!, ...scoreMatch(subject, c, t) }))
     .filter((c) => c.score >= threshold)
     .sort((a, b) => b.score - a.score);
 }

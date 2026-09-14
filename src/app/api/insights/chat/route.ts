@@ -3,7 +3,9 @@ import { audit } from "@/lib/audit";
 import { getAuthorizedUser, resolveClinicScope } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { clientIp, consume } from "@/lib/rate-limit";
+import { isMetricId, isPeriodKey } from "@/lib/domain/insights-catalog";
 import { answerQuestion } from "@/server/insights-assistant";
+import { getTranslator } from "@/i18n/server";
 
 /**
  * Endpoint do assistente de Insights.
@@ -25,8 +27,9 @@ function json(body: unknown, status = 200) {
 }
 
 export async function POST(request: NextRequest) {
+  const t = await getTranslator();
   const user = await getAuthorizedUser();
-  if (!user) return json({ error: "Sessão inválida." }, 401);
+  if (!user) return json({ error: t("insights.errors.invalidSession") }, 401);
 
   if (!can(user.role, "insights.view")) {
     await audit({
@@ -40,13 +43,13 @@ export async function POST(request: NextRequest) {
       entity: "Insights",
       result: "NEGADO",
     });
-    return json({ error: "Sem permissão para aceder aos Insights." }, 403);
+    return json({ error: t("insights.errors.forbidden") }, 403);
   }
 
   const gate = consume(`insights:${user.userId}`, RATE_LIMIT, RATE_WINDOW_MS);
   if (!gate.allowed) {
     return Response.json(
-      { error: "Demasiados pedidos. Tente novamente dentro de instantes." },
+      { error: t("insights.errors.rateLimited") },
       { status: 429, headers: { "Retry-After": String(gate.retryAfterSeconds), "Cache-Control": "no-store" } },
     );
   }
@@ -55,18 +58,26 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return json({ error: "Pedido inválido." }, 400);
+    return json({ error: t("insights.errors.invalidRequest") }, 400);
   }
 
-  const payload = body as { question?: unknown; clinicId?: unknown };
+  const payload = body as { question?: unknown; clinicId?: unknown; context?: unknown };
   const question = typeof payload.question === "string" ? payload.question : "";
-  if (!question.trim()) return json({ error: "Escreva uma pergunta." }, 400);
+  if (!question.trim()) return json({ error: t("insights.errors.emptyQuestion") }, 400);
+
+  // Contexto da pergunta anterior (continuações). Só são aceites identificadores
+  // do catálogo; qualquer outro valor é ignorado.
+  const rawContext = (payload.context ?? {}) as { metric?: unknown; period?: unknown };
+  const context = {
+    metric: isMetricId(rawContext.metric) ? rawContext.metric : null,
+    period: isPeriodKey(rawContext.period) ? rawContext.period : null,
+  };
 
   const requestedClinicId = typeof payload.clinicId === "string" ? payload.clinicId : null;
   const { clinicId } = await resolveClinicScope(user, requestedClinicId);
   const crossTenantAttempt = Boolean(requestedClinicId && requestedClinicId !== clinicId);
 
-  const result = await answerQuestion(user, clinicId, question);
+  const result = await answerQuestion(user, clinicId, question, context);
 
   await audit({
     clinicId,
@@ -90,6 +101,9 @@ export async function POST(request: NextRequest) {
       // guardada no log para não duplicar dados de negócio.
       question: question.slice(0, 200),
       metric: "error" in result ? null : (result.answer.metric?.id ?? null),
+      kind: "error" in result ? null : result.answer.kind,
+      period: "error" in result ? null : result.answer.period,
+      usedContext: "error" in result ? null : result.answer.usedContext,
       denied: "error" in result ? null : (result.answer.denied ?? null),
       crossTenantAttempt,
     },

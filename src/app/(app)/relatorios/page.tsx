@@ -8,29 +8,34 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { buttonVariants } from "@/components/ui/button";
 import { PrintButton } from "@/components/print-button";
 import { Progress } from "@/components/ui/progress";
-import { formatMZN } from "@/lib/money";
+import { getFormatters, getTranslator } from "@/i18n/server";
+
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("reports.title") };
+}
 
 export default async function RelatoriosPage() {
   const user = await requirePermission("report.view");
-  const d = await getDashboardData(user.clinicId);
+  const [d, t, f] = await Promise.all([getDashboardData(user.clinicId), getTranslator(), getFormatters()]);
 
   return (
     <>
       <PageHeader
-        eyebrow="Gestão"
-        title="Relatórios"
-        description="Exporte em CSV ou imprima. Exportação PDF prevista para a Fase 2."
+        eyebrow={t("reports.eyebrow")}
+        title={t("reports.title")}
+        description={t("reports.description")}
         actions={<PrintButton />}
       />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <ReportCard
-          title="Receita e ocupação por médico"
-          description="Mês corrente"
+          title={t("reports.doctors.title")}
+          description={t("reports.currentMonth")}
           exportType="medicos"
         >
           <Table>
-            <TableHeader><TableRow><TableHead>Médico</TableHead><TableHead>Ocupação</TableHead><TableHead className="text-right">Consultas</TableHead><TableHead className="text-right">Receita</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>{t("reports.doctors.doctor")}</TableHead><TableHead>{t("reports.doctors.occupancy")}</TableHead><TableHead className="text-right">{t("reports.doctors.consultations")}</TableHead><TableHead className="text-right">{t("reports.doctors.revenue")}</TableHead></TableRow></TableHeader>
             <TableBody>
               {d.doctorOccupancy.map((doc) => (
                 <TableRow key={doc.id}>
@@ -42,21 +47,21 @@ export default async function RelatoriosPage() {
                     </div>
                   </TableCell>
                   <TableCell className="text-right tabular">{doc.consultas}</TableCell>
-                  <TableCell className="text-right tabular">{formatMZN(doc.receita)}</TableCell>
+                  <TableCell className="text-right tabular">{f.money(doc.receita)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         </ReportCard>
 
-        <ReportCard title="Receita por especialidade" description="Mês corrente" exportType="especialidades">
+        <ReportCard title={t("reports.specialties.title")} description={t("reports.currentMonth")} exportType="especialidades">
           <Table>
-            <TableHeader><TableRow><TableHead>Especialidade</TableHead><TableHead className="text-right">Receita</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>{t("reports.specialties.specialty")}</TableHead><TableHead className="text-right">{t("reports.specialties.revenue")}</TableHead></TableRow></TableHeader>
             <TableBody>
               {d.bySpecialty.map((s) => (
                 <TableRow key={s.label}>
                   <TableCell><span className="inline-flex items-center gap-2"><span className="size-2 rounded-full" style={{ background: s.color }} />{s.label}</span></TableCell>
-                  <TableCell className="text-right tabular">{formatMZN(s.value)}</TableCell>
+                  <TableCell className="text-right tabular">{f.money(s.value)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -64,14 +69,14 @@ export default async function RelatoriosPage() {
         </ReportCard>
       </div>
 
-      <ReportCard title="Contas a receber por plano de saúde" description="Todas as faturas em aberto" exportType="planos">
+      <ReportCard title={t("reports.plans.title")} description={t("reports.plans.description")} exportType="planos">
         <Table>
-          <TableHeader><TableRow><TableHead>Plano</TableHead><TableHead className="text-right">Receita reconhecida (mês)</TableHead></TableRow></TableHeader>
+          <TableHeader><TableRow><TableHead>{t("reports.plans.plan")}</TableHead><TableHead className="text-right">{t("reports.plans.recognisedRevenue")}</TableHead></TableRow></TableHeader>
           <TableBody>
             {d.byPlan.map((p) => (
               <TableRow key={p.label}>
                 <TableCell className="font-medium">{p.label}</TableCell>
-                <TableCell className="text-right tabular">{formatMZN(p.value)}</TableCell>
+                <TableCell className="text-right tabular">{f.money(p.value)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

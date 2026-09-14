@@ -6,26 +6,31 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { createSession, hashPassword, requireUser, verifyPassword } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
 export type AccountActionState = { ok: boolean; message: string } | null;
 
-const profileSchema = z.object({
-  name: z.string().trim().min(3, "Indique o nome completo."),
-  email: z.string().trim().toLowerCase().email("Indique um email válido."),
-});
+const profileSchema = (t: Translator) =>
+  z.object({
+    name: z.string().trim().min(3, t("account.messages.nameRequired")),
+    email: z.string().trim().toLowerCase().email(t("account.messages.emailInvalid")),
+  });
 
-const passwordSchema = z.object({
-  currentPassword: z.string().min(1, "Introduza a palavra-passe atual."),
-  newPassword: z.string().min(8, "A nova palavra-passe deve ter pelo menos 8 caracteres.").max(128),
-  confirmPassword: z.string().min(1, "Confirme a nova palavra-passe."),
-}).refine((values) => values.newPassword === values.confirmPassword, {
-  message: "A confirmação não corresponde à nova palavra-passe.",
-  path: ["confirmPassword"],
-});
+const passwordSchema = (t: Translator) =>
+  z.object({
+    currentPassword: z.string().min(1, t("account.messages.currentRequired")),
+    newPassword: z.string().min(8, t("account.messages.newLength")).max(128),
+    confirmPassword: z.string().min(1, t("account.messages.confirmRequired")),
+  }).refine((values) => values.newPassword === values.confirmPassword, {
+    message: t("account.messages.confirmMismatch"),
+    path: ["confirmPassword"],
+  });
 
 export async function updateOwnProfile(_previous: AccountActionState, formData: FormData): Promise<AccountActionState> {
   const actor = await requireUser();
-  const parsed = profileSchema.safeParse({ name: formData.get("name"), email: formData.get("email") });
+  const t = await getTranslator();
+  const parsed = profileSchema(t).safeParse({ name: formData.get("name"), email: formData.get("email") });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
 
   try {
@@ -42,18 +47,19 @@ export async function updateOwnProfile(_previous: AccountActionState, formData: 
       entityId: updated.id,
     });
     revalidatePath("/", "layout");
-    return { ok: true, message: "Dados pessoais atualizados." };
+    return { ok: true, message: t("account.messages.profileSaved") };
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return { ok: false, message: "Já existe um utilizador com esse email nesta clínica." };
+      return { ok: false, message: t("account.messages.emailTaken") };
     }
-    return { ok: false, message: "Não foi possível atualizar os dados. Tente novamente." };
+    return { ok: false, message: t("account.messages.profileFailed") };
   }
 }
 
 export async function changeOwnPassword(_previous: AccountActionState, formData: FormData): Promise<AccountActionState> {
   const actor = await requireUser();
-  const parsed = passwordSchema.safeParse({
+  const t = await getTranslator();
+  const parsed = passwordSchema(t).safeParse({
     currentPassword: formData.get("currentPassword"),
     newPassword: formData.get("newPassword"),
     confirmPassword: formData.get("confirmPassword"),
@@ -65,10 +71,10 @@ export async function changeOwnPassword(_previous: AccountActionState, formData:
     select: { id: true, passwordHash: true },
   });
   if (!current || !verifyPassword(parsed.data.currentPassword, current.passwordHash)) {
-    return { ok: false, message: "A palavra-passe atual está incorreta." };
+    return { ok: false, message: t("account.messages.currentWrong") };
   }
   if (verifyPassword(parsed.data.newPassword, current.passwordHash)) {
-    return { ok: false, message: "A nova palavra-passe deve ser diferente da atual." };
+    return { ok: false, message: t("account.messages.sameAsCurrent") };
   }
 
   const updated = await prisma.$transaction(async (tx) => {
@@ -103,5 +109,5 @@ export async function changeOwnPassword(_previous: AccountActionState, formData:
     entity: "User",
     entityId: actor.userId,
   });
-  return { ok: true, message: "Palavra-passe alterada. As outras sessões foram terminadas." };
+  return { ok: true, message: t("account.messages.passwordChanged") };
 }

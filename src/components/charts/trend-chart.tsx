@@ -5,12 +5,14 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import { formatMZN, formatMZNCompact } from "@/lib/money";
+import { useFormat } from "@/i18n/client";
+import { barColor } from "@/lib/chart-color";
 
 type Point = { label: string; value: number };
 type TooltipPayload = { value: number };
@@ -21,16 +23,14 @@ type TooltipProps = {
   kind: "mzn" | "int";
 };
 
-function fmt(v: number, kind: "mzn" | "int") {
-  return kind === "mzn" ? formatMZN(v) : v.toLocaleString("pt-PT");
-}
-
 function TooltipBox({ active, payload, label, kind }: TooltipProps) {
+  const f = useFormat();
   if (!active || !payload?.length) return null;
+  const fmt = (v: number) => (kind === "mzn" ? f.money(v) : f.number(v));
   return (
-    <div className="rounded-md border border-border bg-card px-3 py-2 text-xs shadow-lg">
+    <div className="glass-strong rounded-[14px] px-3 py-2 text-xs">
       <p className="font-medium text-muted-foreground">{label}</p>
-      <p className="mt-0.5 font-semibold tabular">{fmt(payload[0].value, kind)}</p>
+      <p className="mt-0.5 font-semibold tabular">{fmt(payload[0].value)}</p>
     </div>
   );
 }
@@ -46,8 +46,10 @@ export function TrendChart({
   variant?: "area" | "bar";
   height?: number;
 }) {
+  const f = useFormat();
   const axisTick = { fontSize: 11, fill: "var(--muted-foreground)" };
-  const yFmt = (v: number) => (kind === "mzn" ? formatMZNCompact(v).replace(" MZN", "") : String(v));
+  // Eixo compacto sem o código da moeda (já indicado no contexto do gráfico).
+  const yFmt = (v: number) => (kind === "mzn" ? f.moneyCompact(v).replace(f.currency, "").trim() : f.number(v));
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -79,7 +81,12 @@ export function TrendChart({
           <XAxis dataKey="label" tickLine={false} axisLine={false} tick={axisTick} />
           <YAxis tickLine={false} axisLine={false} tick={axisTick} width={40} tickFormatter={yFmt} />
           <Tooltip content={<TooltipBox kind={kind} />} cursor={{ fill: "var(--surface-2)" }} />
-          <Bar dataKey="value" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={38} />
+          {/* Tonalidades distribuídas uniformemente pela quantidade de barras. */}
+          <Bar dataKey="value" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={38}>
+            {data.map((point, index) => (
+              <Cell key={`${point.label}-${index}`} fill={barColor(index, data.length)} />
+            ))}
+          </Bar>
         </BarChart>
       )}
     </ResponsiveContainer>

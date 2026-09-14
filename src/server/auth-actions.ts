@@ -6,17 +6,18 @@ import { prisma } from "@/lib/prisma";
 import { createSession, destroySession, getSession, verifyPassword } from "@/lib/auth";
 import { audit } from "@/lib/audit";
 import { clientIp, consume, reset } from "@/lib/rate-limit";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
-const schema = z.object({
-  email: z.string().email("Email inválido"),
-  password: z.string().min(1, "Introduza a palavra-passe"),
-});
+const loginSchema = (t: Translator) =>
+  z.object({
+    email: z.string().email(t("auth.errors.invalidEmail")),
+    password: z.string().min(1, t("auth.errors.passwordRequired")),
+  });
 
-/**
- * Mensagem única para credenciais erradas, conta inexistente e conta inactiva.
- * Distinguir os casos permitiria enumerar contas válidas (§29).
- */
-const GENERIC_ERROR = "Credenciais inválidas.";
+// Mensagem única (`auth.errors.invalidCredentials`) para credenciais erradas,
+// conta inexistente e conta inactiva. Distinguir os casos permitiria enumerar
+// contas válidas (§29).
 
 /** Janela e limites da protecção contra força bruta. */
 const WINDOW_MS = 15 * 60_000;
@@ -32,7 +33,8 @@ async function recordAttempt(email: string, ip: string | null, success: boolean,
 }
 
 export async function loginAction(_prev: unknown, formData: FormData) {
-  const parsed = schema.safeParse({
+  const t = await getTranslator();
+  const parsed = loginSchema(t).safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
   });
@@ -66,7 +68,7 @@ export async function loginAction(_prev: unknown, formData: FormData) {
         metadata: { reason: "rate_limit" },
       });
     }
-    return { error: `Demasiadas tentativas. Tente novamente dentro de ${Math.ceil(retry / 60)} minuto(s).` };
+    return { error: t("auth.errors.tooManyAttempts", { minutes: Math.ceil(retry / 60) }) };
   }
 
   // O mesmo e-mail pode existir em clínicas diferentes (`@@unique([clinicId,
@@ -94,7 +96,7 @@ export async function loginAction(_prev: unknown, formData: FormData) {
         request: { ipAddress: ip, userAgent, endpoint: "/login", httpMethod: "POST" },
       });
     }
-    return { error: GENERIC_ERROR };
+    return { error: t("auth.errors.invalidCredentials") };
   }
 
   reset(`login:acct:${email}`);

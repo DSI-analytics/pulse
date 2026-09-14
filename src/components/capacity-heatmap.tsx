@@ -1,4 +1,8 @@
+"use client";
+
 // Weekly capacity heatmap — sequential single-hue (teal) by occupancy %.
+
+import { useT } from "@/i18n/client";
 
 export function CapacityHeatmap({
   blocks,
@@ -7,6 +11,7 @@ export function CapacityHeatmap({
   blocks: string[]; // row labels (time bands)
   columns: { label: string; cells: number[] }[]; // one per weekday; cells indexed by block
 }) {
+  const t = useT();
   function bg(v: number) {
     // 0% -> surface-2, 100% -> primary
     return `color-mix(in srgb, var(--primary) ${Math.round(v)}%, var(--surface-2))`;
@@ -47,9 +52,9 @@ export function CapacityHeatmap({
         </tbody>
       </table>
       <div className="mt-3 flex items-center justify-end gap-2 text-[11px] text-muted-foreground">
-        <span>Menos ocupado</span>
+        <span>{t("charts.heatmap.less")}</span>
         <div className="h-2.5 w-24 rounded-full" style={{ background: "linear-gradient(90deg, var(--surface-2), var(--primary))" }} />
-        <span>Mais ocupado</span>
+        <span>{t("charts.heatmap.more")}</span>
       </div>
     </div>
   );

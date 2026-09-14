@@ -1,15 +1,21 @@
+import type { Metadata } from "next";
 import { BadgeCheck, Building2, CalendarClock, Mail, Stethoscope, UserRound } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ROLE_LABELS } from "@/lib/rbac";
-import { formatDatePt, formatDateTimePt } from "@/lib/datetime";
 import { PageHeader } from "@/components/page-header";
 import { AccountSettings } from "@/components/account-settings";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { getFormatters, getTranslator } from "@/i18n/server";
+
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslator();
+  return { title: t("userMenu.myAccount") };
+}
 
 export default async function MinhaContaPage() {
   const session = await requireUser();
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
   const account = await prisma.user.findFirstOrThrow({
     where: { id: session.userId, clinicId: session.clinicId },
     select: {
@@ -21,25 +27,25 @@ export default async function MinhaContaPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Conta" title="Meus detalhes" description="Consulte os seus dados pessoais e faça alterações à sua conta." />
+      <PageHeader eyebrow={t("account.eyebrow")} title={t("account.title")} description={t("account.description")} />
 
-      <section className="border-y border-border py-5" aria-label="Resumo da conta">
+      <section className="border-y border-border py-5" aria-label={t("account.summary")}>
         <div className="flex flex-col gap-5 md:flex-row md:items-center">
           <Avatar name={account.name} className="size-16 text-xl" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="text-xl font-semibold">{account.name}</h2>
-              <Badge variant={account.isActive ? "success" : "neutral"}>{account.isActive ? "Conta ativa" : "Conta inativa"}</Badge>
+              <Badge variant={account.isActive ? "success" : "neutral"}>{account.isActive ? t("account.active") : t("account.inactive")}</Badge>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">{account.email}</p>
           </div>
           <div className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
-            <Detail icon={BadgeCheck} label="Perfil" value={ROLE_LABELS[account.role]} />
-            <Detail icon={Building2} label="Clínica" value={account.clinic.name} />
-            <Detail icon={Stethoscope} label="Médico associado" value={account.doctor ? `${account.doctor.name} · ${account.doctor.specialty.name}` : "Não associado"} />
-            <Detail icon={CalendarClock} label="Último acesso" value={account.lastLoginAt ? formatDateTimePt(account.lastLoginAt) : "Primeiro acesso"} />
-            <Detail icon={UserRound} label="Conta criada" value={formatDatePt(account.createdAt)} />
-            <Detail icon={Mail} label="Identificador de acesso" value={account.email} />
+            <Detail icon={BadgeCheck} label={t("account.role")} value={t(`roles.${account.role}`)} />
+            <Detail icon={Building2} label={t("account.clinic")} value={account.clinic.name} />
+            <Detail icon={Stethoscope} label={t("account.linkedDoctor")} value={account.doctor ? `${account.doctor.name} · ${account.doctor.specialty.name}` : t("account.notLinked")} />
+            <Detail icon={CalendarClock} label={t("account.lastAccess")} value={account.lastLoginAt ? f.dateTime(account.lastLoginAt) : t("account.firstAccess")} />
+            <Detail icon={UserRound} label={t("account.createdAt")} value={f.dateMedium(account.createdAt)} />
+            <Detail icon={Mail} label={t("account.loginId")} value={account.email} />
           </div>
         </div>
       </section>

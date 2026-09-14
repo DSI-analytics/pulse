@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/toast";
 import { checkPrescriptionAllergies, createPrescription } from "@/server/clinical-actions";
 import type { AllergyWarning } from "@/lib/domain/allergy-check";
+import { useT } from "@/i18n/client";
 
 /**
  * Emissão de receita.
@@ -39,14 +40,7 @@ interface ItemDraft {
 const ROUTES = [
   "ORAL", "INTRAVENOSA", "INTRAMUSCULAR", "SUBCUTANEA", "TOPICA",
   "INALATORIA", "RECTAL", "OFTALMICA", "OTOLOGICA", "NASAL", "OUTRA",
-];
-
-const ROUTE_LABEL: Record<string, string> = {
-  ORAL: "Oral", INTRAVENOSA: "Intravenosa", INTRAMUSCULAR: "Intramuscular",
-  SUBCUTANEA: "Subcutânea", TOPICA: "Tópica", INALATORIA: "Inalatória",
-  RECTAL: "Rectal", OFTALMICA: "Oftálmica", OTOLOGICA: "Otológica",
-  NASAL: "Nasal", OUTRA: "Outra",
-};
+] as const;
 
 let counter = 0;
 const emptyItem = (): ItemDraft => ({
@@ -70,6 +64,7 @@ export function PrescriptionButton({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [items, setItems] = React.useState<ItemDraft[]>([emptyItem()]);
   const [notes, setNotes] = React.useState("");
@@ -119,9 +114,9 @@ export function PrescriptionButton({
 
   async function submit() {
     setError(null);
-    if (!named.length) return setError("Adicione pelo menos um medicamento.");
+    if (!named.length) return setError(t("clinical.prescription.needMedication"));
     if (blocking.length && !acknowledge) {
-      return setError("Confirme explicitamente que reviu os alertas de alergia antes de emitir.");
+      return setError(t("clinical.prescription.confirmWarnings"));
     }
     setSaving(true);
     const result = await createPrescription({
@@ -144,7 +139,7 @@ export function PrescriptionButton({
     });
     setSaving(false);
     if ("error" in result) return setError(result.error);
-    toast(`Receita ${result.number} emitida`);
+    toast(t("clinical.prescription.issued", { number: result.number }));
     router.refresh();
     setOpen(false);
     reset();
@@ -153,35 +148,35 @@ export function PrescriptionButton({
   return (
     <>
       <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        <Pill className="size-4" /> Nova receita
+        <Pill className="size-4" /> {t("clinical.prescription.newButton")}
       </Button>
 
       {open && (
         <Modal
           open
           onClose={() => setOpen(false)}
-          title="Emitir receita"
-          description="Os medicamentos são confrontados com as alergias activas do paciente."
+          title={t("clinical.prescription.title")}
+          description={t("clinical.prescription.description")}
           className="max-w-3xl"
           footer={
             <>
-              <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button variant="ghost" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
               <Button onClick={submit} disabled={saving || checking}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Emitir
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("clinical.prescription.issue")}
               </Button>
             </>
           }
         >
           <div className="space-y-3">
             {items.map((item, index) => (
-              <div key={item.key} className="rounded-lg border border-border bg-surface-2/40 p-3">
+              <div key={item.key} className="rounded-lg border border-border bg-fill-subtle p-3">
                 <div className="mb-2 flex items-center justify-between">
-                  <p className="text-[13px] font-medium text-muted-foreground">Medicamento {index + 1}</p>
+                  <p className="text-[13px] font-medium text-muted-foreground">{t("clinical.prescription.medicationNumber", { number: index + 1 })}</p>
                   {items.length > 1 && (
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label={`Remover medicamento ${index + 1}`}
+                      aria-label={t("clinical.prescription.removeMedication", { number: index + 1 })}
                       onClick={() => setItems((prev) => prev.filter((i) => i.key !== item.key))}
                     >
                       <Trash2 className="size-4" />
@@ -191,7 +186,7 @@ export function PrescriptionButton({
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="sm:col-span-2">
-                    <Label htmlFor={`${item.key}-cat`}>Do catálogo</Label>
+                    <Label htmlFor={`${item.key}-cat`}>{t("clinical.prescription.fromCatalog")}</Label>
                     <Select
                       id={`${item.key}-cat`}
                       className="mt-1.5"
@@ -205,61 +200,61 @@ export function PrescriptionButton({
                         });
                       }}
                     >
-                      <option value="">Escrever manualmente…</option>
+                      <option value="">{t("clinical.prescription.writeManually")}</option>
                       {medications.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
                     </Select>
                   </div>
 
                   <div>
-                    <Label htmlFor={`${item.key}-name`}>Medicamento <span className="text-danger">*</span></Label>
+                    <Label htmlFor={`${item.key}-name`}>{t("clinical.prescription.medication")} <span className="text-danger">*</span></Label>
                     <Input id={`${item.key}-name`} className="mt-1.5" value={item.medicationName}
-                      onChange={(e) => update(item.key, { medicationName: e.target.value })} placeholder="Ex.: Amoxicilina 500 mg" />
+                      onChange={(e) => update(item.key, { medicationName: e.target.value })} placeholder={t("clinical.prescription.medicationPlaceholder")} />
                   </div>
                   <div>
-                    <Label htmlFor={`${item.key}-ai`}>Princípio activo</Label>
+                    <Label htmlFor={`${item.key}-ai`}>{t("clinical.prescription.activeIngredient")}</Label>
                     <Input id={`${item.key}-ai`} className="mt-1.5" value={item.activeIngredient}
-                      onChange={(e) => update(item.key, { activeIngredient: e.target.value })} placeholder="Ex.: Amoxicilina" />
+                      onChange={(e) => update(item.key, { activeIngredient: e.target.value })} placeholder={t("clinical.prescription.activeIngredientPlaceholder")} />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label htmlFor={`${item.key}-dose`}>Dose</Label>
+                      <Label htmlFor={`${item.key}-dose`}>{t("clinical.prescription.dose")}</Label>
                       <Input id={`${item.key}-dose`} className="mt-1.5" value={item.dose}
                         onChange={(e) => update(item.key, { dose: e.target.value })} placeholder="500" />
                     </div>
                     <div>
-                      <Label htmlFor={`${item.key}-unit`}>Unidade</Label>
+                      <Label htmlFor={`${item.key}-unit`}>{t("clinical.prescription.unit")}</Label>
                       <Input id={`${item.key}-unit`} className="mt-1.5" value={item.doseUnit}
                         onChange={(e) => update(item.key, { doseUnit: e.target.value })} placeholder="mg" />
                     </div>
                   </div>
                   <div>
-                    <Label htmlFor={`${item.key}-route`}>Via</Label>
+                    <Label htmlFor={`${item.key}-route`}>{t("clinical.prescription.route")}</Label>
                     <Select id={`${item.key}-route`} className="mt-1.5" value={item.route}
                       onChange={(e) => update(item.key, { route: e.target.value })}>
-                      {ROUTES.map((r) => <option key={r} value={r}>{ROUTE_LABEL[r]}</option>)}
+                      {ROUTES.map((r) => <option key={r} value={r}>{t(`clinical.prescription.routes.${r}`)}</option>)}
                     </Select>
                   </div>
                   <div>
-                    <Label htmlFor={`${item.key}-freq`}>Frequência</Label>
+                    <Label htmlFor={`${item.key}-freq`}>{t("clinical.prescription.frequency")}</Label>
                     <Input id={`${item.key}-freq`} className="mt-1.5" value={item.frequency}
                       onChange={(e) => update(item.key, { frequency: e.target.value })} placeholder="8/8h" />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label htmlFor={`${item.key}-dur`}>Duração (dias)</Label>
+                      <Label htmlFor={`${item.key}-dur`}>{t("clinical.prescription.durationDays")}</Label>
                       <Input id={`${item.key}-dur`} className="mt-1.5" type="number" min={0} value={item.durationDays}
                         onChange={(e) => update(item.key, { durationDays: e.target.value })} placeholder="7" />
                     </div>
                     <div>
-                      <Label htmlFor={`${item.key}-qty`}>Quantidade</Label>
+                      <Label htmlFor={`${item.key}-qty`}>{t("clinical.prescription.quantity")}</Label>
                       <Input id={`${item.key}-qty`} className="mt-1.5" value={item.quantity}
-                        onChange={(e) => update(item.key, { quantity: e.target.value })} placeholder="21 comp." />
+                        onChange={(e) => update(item.key, { quantity: e.target.value })} placeholder={t("clinical.prescription.quantityPlaceholder")} />
                     </div>
                   </div>
                   <div className="sm:col-span-2">
-                    <Label htmlFor={`${item.key}-instr`}>Instruções</Label>
+                    <Label htmlFor={`${item.key}-instr`}>{t("clinical.prescription.instructions")}</Label>
                     <Input id={`${item.key}-instr`} className="mt-1.5" value={item.instructions}
-                      onChange={(e) => update(item.key, { instructions: e.target.value })} placeholder="Após as refeições" />
+                      onChange={(e) => update(item.key, { instructions: e.target.value })} placeholder={t("clinical.prescription.instructionsPlaceholder")} />
                   </div>
                 </div>
 
@@ -284,34 +279,31 @@ export function PrescriptionButton({
             ))}
 
             <Button variant="ghost" size="sm" onClick={() => setItems((prev) => [...prev, emptyItem()])}>
-              <Plus className="size-4" /> Adicionar medicamento
+              <Plus className="size-4" /> {t("clinical.prescription.addMedication")}
             </Button>
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <Label htmlFor="rx-valid">Válida até</Label>
+                <Label htmlFor="rx-valid">{t("clinical.prescription.validUntil")}</Label>
                 <Input id="rx-valid" className="mt-1.5" type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
               </div>
             </div>
             <div>
-              <Label htmlFor="rx-notes">Notas</Label>
+              <Label htmlFor="rx-notes">{t("clinical.prescription.notes")}</Label>
               <Textarea id="rx-notes" className="mt-1.5" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
 
-            {checking && <p className="text-xs text-muted-foreground">A verificar alergias…</p>}
+            {checking && <p className="text-xs text-muted-foreground">{t("clinical.prescription.checking")}</p>}
 
             {blocking.length > 0 && (
-              <label className="flex items-start gap-2 rounded-md border border-danger/50 bg-danger-muted/50 p-3 text-[13px] text-danger">
+              <label className="flex items-start gap-2 rounded-md border border-danger-edge bg-danger-muted p-3 text-[13px] text-danger">
                 <input
                   type="checkbox"
                   className="mt-0.5"
                   checked={acknowledge}
                   onChange={(e) => setAcknowledge(e.target.checked)}
                 />
-                <span>
-                  Revi os {blocking.length} alerta(s) de alergia grave e assumo a responsabilidade clínica por emitir
-                  esta receita.
-                </span>
+                <span>{t("clinical.prescription.acknowledge", { count: blocking.length })}</span>
               </label>
             )}
 

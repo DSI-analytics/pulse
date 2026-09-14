@@ -5,18 +5,24 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { can, type Permission } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
-import { parseMZN } from "@/lib/money";
+import { parseMoneyInput } from "@/lib/format";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 import type { PatientProfileValues } from "@/server/patient-data";
 import { createPatientProfile, updatePatientProfile } from "@/server/patient-registry";
 
 type Values = Record<string, string>;
 type Result = { ok: true; id?: string } | { error: string };
 
-async function guard(permission: Permission): Promise<{ clinicId: string; userId: string } | { error: string }> {
+async function guard(permission: Permission): Promise<{ clinicId: string; userId: string; t: Translator } | { error: string }> {
   const user = await requireUser();
-  if (!can(user.role, permission)) return { error: "Sem permissão para esta operação." };
-  return { clinicId: user.clinicId, userId: user.userId };
+  const t = await getTranslator();
+  if (!can(user.role, permission)) return { error: t("catalog.errors.noPermission") };
+  return { clinicId: user.clinicId, userId: user.userId, t };
 }
+
+/** Cor predefinida das especialidades (OKLCH, igual à paleta das Configurações). */
+const DEFAULT_SPECIALTY_COLOR = "oklch(55% 0.11 182)";
 
 const nonEmpty = (v?: string) => (v ?? "").trim();
 
@@ -51,13 +57,13 @@ export async function deletePatientRecord(patientId: string): Promise<Result> {
     where: { id: patientId, clinicId: g.clinicId },
     select: { id: true, code: true, name: true, isActive: true },
   });
-  if (!patient) return { error: "Paciente não encontrado." };
-  if (!patient.isActive) return { error: "Este paciente já está inactivo." };
+  if (!patient) return { error: g.t("catalog.errors.patientNotFound") };
+  if (!patient.isActive) return { error: g.t("catalog.errors.patientAlreadyInactive") };
 
   const upcoming = await prisma.appointment.count({
     where: { clinicId: g.clinicId, patientId: patient.id, startAt: { gte: new Date() }, status: { in: ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA", "EM_CONSULTA"] } },
   });
-  if (upcoming > 0) return { error: "Cancele primeiro as marcações futuras deste paciente." };
+  if (upcoming > 0) return { error: g.t("catalog.errors.patientUpcoming") };
 
   await prisma.patient.update({
     where: { id: patient.id },
@@ -84,11 +90,11 @@ export async function createSpecialtyRecord(values: Values): Promise<Result> {
   const g = await guard("doctor.manage");
   if ("error" in g) return g;
   const name = nonEmpty(values.name);
-  if (name.length < 2) return { error: "Indique o nome da especialidade." };
+  if (name.length < 2) return { error: g.t("catalog.errors.specialtyName") };
   const exists = await prisma.specialty.findFirst({ where: { clinicId: g.clinicId, name } });
-  if (exists) return { error: "Já existe uma especialidade com esse nome." };
+  if (exists) return { error: g.t("catalog.errors.specialtyDuplicate") };
   const s = await prisma.specialty.create({
-    data: { clinicId: g.clinicId, name, color: nonEmpty(values.color) || "#0C7C74" },
+    data: { clinicId: g.clinicId, name, color: nonEmpty(values.color) || DEFAULT_SPECIALTY_COLOR },
     select: { id: true },
   });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "specialty.create", entity: "Specialty", entityId: s.id });
@@ -101,14 +107,14 @@ export async function updateSpecialtyRecord(id: string, values: Values): Promise
   const g = await guard("doctor.manage");
   if ("error" in g) return g;
   const name = nonEmpty(values.name);
-  if (name.length < 2) return { error: "Indique o nome da especialidade." };
+  if (name.length < 2) return { error: g.t("catalog.errors.specialtyName") };
   const existing = await prisma.specialty.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Especialidade não encontrada." };
+  if (!existing) return { error: g.t("catalog.errors.specialtyNotFound") };
   const dup = await prisma.specialty.findFirst({ where: { clinicId: g.clinicId, name, NOT: { id } } });
-  if (dup) return { error: "Já existe uma especialidade com esse nome." };
+  if (dup) return { error: g.t("catalog.errors.specialtyDuplicate") };
   const updated = await prisma.specialty.update({
     where: { id: existing.id },
-    data: { name, color: nonEmpty(values.color) || "#0C7C74" },
+    data: { name, color: nonEmpty(values.color) || DEFAULT_SPECIALTY_COLOR },
     select: { id: true },
   });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "specialty.update", entity: "Specialty", entityId: updated.id });
@@ -121,9 +127,9 @@ export async function deleteSpecialtyRecord(id: string): Promise<Result> {
   const g = await guard("doctor.manage");
   if ("error" in g) return g;
   const existing = await prisma.specialty.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Especialidade não encontrada." };
+  if (!existing) return { error: g.t("catalog.errors.specialtyNotFound") };
   const doctorCount = await prisma.doctor.count({ where: { clinicId: g.clinicId, specialtyId: id } });
-  if (doctorCount > 0) return { error: "Não pode apagar uma especialidade com médicos associados." };
+  if (doctorCount > 0) return { error: g.t("catalog.errors.specialtyInUse") };
   await prisma.specialty.delete({ where: { id: existing.id } });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "specialty.delete", entity: "Specialty", entityId: existing.id });
   revalidatePath("/medicos");
@@ -136,11 +142,13 @@ export async function createDoctorRecord(values: Values): Promise<Result> {
   const g = await guard("doctor.manage");
   if ("error" in g) return g;
   const name = nonEmpty(values.name);
-  if (name.length < 3) return { error: "Indique o nome do médico." };
-  if (!nonEmpty(values.specialtyId)) return { error: "Selecione a especialidade." };
+  if (name.length < 3) return { error: g.t("catalog.errors.doctorName") };
+  if (!nonEmpty(values.specialtyId)) return { error: g.t("catalog.errors.specialtyRequired") };
   const spec = await prisma.specialty.findFirst({ where: { id: values.specialtyId, clinicId: g.clinicId } });
-  if (!spec) return { error: "Especialidade inválida." };
-  const price = parseMZN(values.consultationPrice || "0") || 150000;
+  if (!spec) return { error: g.t("catalog.errors.specialtyInvalid") };
+  const parsedPrice = parseMoneyInput(values.consultationPrice || "0");
+  if (parsedPrice === null) return { error: g.t("catalog.errors.invalidPrice") };
+  const price = parsedPrice || 150000;
   const duration = Number.parseInt(values.consultationDuration || "30", 10) || 30;
 
   const d = await prisma.doctor.create({
@@ -172,13 +180,15 @@ export async function updateDoctorRecord(id: string, values: Values): Promise<Re
   const g = await guard("doctor.manage");
   if ("error" in g) return g;
   const existing = await prisma.doctor.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Médico não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.doctorNotFound") };
   const name = nonEmpty(values.name);
-  if (name.length < 3) return { error: "Indique o nome do médico." };
-  if (!nonEmpty(values.specialtyId)) return { error: "Selecione a especialidade." };
+  if (name.length < 3) return { error: g.t("catalog.errors.doctorName") };
+  if (!nonEmpty(values.specialtyId)) return { error: g.t("catalog.errors.specialtyRequired") };
   const spec = await prisma.specialty.findFirst({ where: { id: values.specialtyId, clinicId: g.clinicId } });
-  if (!spec) return { error: "Especialidade inválida." };
-  const price = parseMZN(values.consultationPrice || "0") || 150000;
+  if (!spec) return { error: g.t("catalog.errors.specialtyInvalid") };
+  const parsedPrice = parseMoneyInput(values.consultationPrice || "0");
+  if (parsedPrice === null) return { error: g.t("catalog.errors.invalidPrice") };
+  const price = parsedPrice || 150000;
   const duration = Number.parseInt(values.consultationDuration || "30", 10) || 30;
   const updated = await prisma.doctor.update({
     where: { id: existing.id },
@@ -202,7 +212,7 @@ export async function deleteDoctorRecord(id: string): Promise<Result> {
   const g = await guard("doctor.manage");
   if ("error" in g) return g;
   const existing = await prisma.doctor.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Médico não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.doctorNotFound") };
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -214,7 +224,7 @@ export async function deleteDoctorRecord(id: string): Promise<Result> {
       await tx.doctor.delete({ where: { id: existing.id, clinicId: g.clinicId } });
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Não foi possível apagar o médico.";
+    const message = error instanceof Error ? error.message : g.t("catalog.errors.doctorDeleteFailed");
     return { error: message };
   }
 
@@ -229,7 +239,7 @@ export async function createSupplierRecord(values: Values): Promise<Result> {
   const g = await guard("supplier.manage");
   if ("error" in g) return g;
   const name = nonEmpty(values.name);
-  if (name.length < 2) return { error: "Indique o nome do fornecedor." };
+  if (name.length < 2) return { error: g.t("catalog.errors.supplierName") };
   const s = await prisma.supplier.create({
     data: {
       clinicId: g.clinicId, name,
@@ -250,9 +260,9 @@ export async function updateSupplierRecord(id: string, values: Values): Promise<
   const g = await guard("supplier.manage");
   if ("error" in g) return g;
   const name = nonEmpty(values.name);
-  if (name.length < 2) return { error: "Indique o nome do fornecedor." };
+  if (name.length < 2) return { error: g.t("catalog.errors.supplierName") };
   const existing = await prisma.supplier.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Fornecedor não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.supplierNotFound") };
   const updated = await prisma.supplier.update({
     where: { id: existing.id },
     data: {
@@ -274,10 +284,10 @@ export async function deleteSupplierRecord(id: string): Promise<Result> {
   const g = await guard("supplier.manage");
   if ("error" in g) return g;
   const existing = await prisma.supplier.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Fornecedor não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.supplierNotFound") };
   const purchaseCount = await prisma.purchase.count({ where: { clinicId: g.clinicId, supplierId: id } });
   const itemCount = await prisma.inventoryItem.count({ where: { clinicId: g.clinicId, supplierId: id } });
-  if (purchaseCount > 0 || itemCount > 0) return { error: "Não pode apagar um fornecedor com compras ou artigos associados." };
+  if (purchaseCount > 0 || itemCount > 0) return { error: g.t("catalog.errors.supplierInUse") };
   await prisma.supplier.delete({ where: { id: existing.id } });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "supplier.delete", entity: "Supplier", entityId: existing.id });
   revalidatePath("/fornecedores");
@@ -288,18 +298,21 @@ export async function deleteSupplierRecord(id: string): Promise<Result> {
 export async function createHealthPlanRecord(values: Values): Promise<Result> {
   const g = await guard("healthplan.manage");
   if ("error" in g) return g;
-  if (!nonEmpty(values.insuranceCompanyId)) return { error: "Selecione a seguradora." };
+  if (!nonEmpty(values.insuranceCompanyId)) return { error: g.t("catalog.errors.insurerRequired") };
   const name = nonEmpty(values.name);
-  if (name.length < 2) return { error: "Indique o nome do plano." };
+  if (name.length < 2) return { error: g.t("catalog.errors.planName") };
   const insurer = await prisma.healthInsuranceCompany.findFirst({ where: { id: values.insuranceCompanyId, clinicId: g.clinicId } });
-  if (!insurer) return { error: "Seguradora inválida." };
+  if (!insurer) return { error: g.t("catalog.errors.insurerInvalid") };
+  const contractPrice = parseMoneyInput(values.contractPrice || "0");
+  const patientCopay = parseMoneyInput(values.patientCopay || "0");
+  if (contractPrice === null || patientCopay === null) return { error: g.t("catalog.errors.invalidPrice") };
   const p = await prisma.healthPlan.create({
     data: {
       clinicId: g.clinicId,
       insuranceCompanyId: insurer.id,
       name,
-      contractPrice: parseMZN(values.contractPrice || "0"),
-      patientCopay: parseMZN(values.patientCopay || "0"),
+      contractPrice,
+      patientCopay,
     },
     select: { id: true },
   });
@@ -312,19 +325,22 @@ export async function updateHealthPlanRecord(id: string, values: Values): Promis
   const g = await guard("healthplan.manage");
   if ("error" in g) return g;
   const existing = await prisma.healthPlan.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Plano não encontrado." };
-  if (!nonEmpty(values.insuranceCompanyId)) return { error: "Selecione a seguradora." };
+  if (!existing) return { error: g.t("catalog.errors.planNotFound") };
+  if (!nonEmpty(values.insuranceCompanyId)) return { error: g.t("catalog.errors.insurerRequired") };
   const insurer = await prisma.healthInsuranceCompany.findFirst({ where: { id: values.insuranceCompanyId, clinicId: g.clinicId } });
-  if (!insurer) return { error: "Seguradora inválida." };
+  if (!insurer) return { error: g.t("catalog.errors.insurerInvalid") };
   const name = nonEmpty(values.name);
-  if (name.length < 2) return { error: "Indique o nome do plano." };
+  if (name.length < 2) return { error: g.t("catalog.errors.planName") };
+  const contractPrice = parseMoneyInput(values.contractPrice || "0");
+  const patientCopay = parseMoneyInput(values.patientCopay || "0");
+  if (contractPrice === null || patientCopay === null) return { error: g.t("catalog.errors.invalidPrice") };
   const updated = await prisma.healthPlan.update({
     where: { id: existing.id },
     data: {
       insuranceCompanyId: insurer.id,
       name,
-      contractPrice: parseMZN(values.contractPrice || "0"),
-      patientCopay: parseMZN(values.patientCopay || "0"),
+      contractPrice,
+      patientCopay,
     },
     select: { id: true },
   });
@@ -337,10 +353,10 @@ export async function deleteHealthPlanRecord(id: string): Promise<Result> {
   const g = await guard("healthplan.manage");
   if ("error" in g) return g;
   const existing = await prisma.healthPlan.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Plano não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.planNotFound") };
   const linkCount = await prisma.patientHealthPlan.count({ where: { clinicId: g.clinicId, healthPlanId: id } });
   const appointmentCount = await prisma.appointment.count({ where: { clinicId: g.clinicId, healthPlanId: id } });
-  if (linkCount > 0 || appointmentCount > 0) return { error: "Não pode apagar um plano com associações existentes." };
+  if (linkCount > 0 || appointmentCount > 0) return { error: g.t("catalog.errors.planInUse") };
   await prisma.healthPlan.delete({ where: { id: existing.id } });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "healthplan.delete", entity: "HealthPlan", entityId: existing.id });
   revalidatePath("/planos");
@@ -353,11 +369,12 @@ export async function createInventoryItemRecord(values: Values): Promise<Result>
   if ("error" in g) return g;
   const name = nonEmpty(values.name);
   const sku = nonEmpty(values.sku);
-  if (name.length < 2) return { error: "Indique o nome do artigo." };
-  if (sku.length < 1) return { error: "Indique o SKU." };
+  if (name.length < 2) return { error: g.t("catalog.errors.itemName") };
+  if (sku.length < 1) return { error: g.t("catalog.errors.skuRequired") };
   const dup = await prisma.inventoryItem.findFirst({ where: { clinicId: g.clinicId, sku } });
-  if (dup) return { error: "Já existe um artigo com esse SKU." };
-  const cost = parseMZN(values.purchasePrice || "0");
+  if (dup) return { error: g.t("catalog.errors.skuDuplicate") };
+  const cost = parseMoneyInput(values.purchasePrice || "0");
+  if (cost === null) return { error: g.t("catalog.errors.invalidPrice") };
   const item = await prisma.inventoryItem.create({
     data: {
       clinicId: g.clinicId,
@@ -380,14 +397,15 @@ export async function updateInventoryItemRecord(id: string, values: Values): Pro
   const g = await guard("inventory.manage");
   if ("error" in g) return g;
   const existing = await prisma.inventoryItem.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Artigo não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.itemNotFound") };
   const name = nonEmpty(values.name);
   const sku = nonEmpty(values.sku);
-  if (name.length < 2) return { error: "Indique o nome do artigo." };
-  if (sku.length < 1) return { error: "Indique o SKU." };
+  if (name.length < 2) return { error: g.t("catalog.errors.itemName") };
+  if (sku.length < 1) return { error: g.t("catalog.errors.skuRequired") };
   const dup = await prisma.inventoryItem.findFirst({ where: { clinicId: g.clinicId, sku, NOT: { id } } });
-  if (dup) return { error: "Já existe um artigo com esse SKU." };
-  const cost = parseMZN(values.purchasePrice || "0");
+  if (dup) return { error: g.t("catalog.errors.skuDuplicate") };
+  const cost = parseMoneyInput(values.purchasePrice || "0");
+  if (cost === null) return { error: g.t("catalog.errors.invalidPrice") };
   const updated = await prisma.inventoryItem.update({
     where: { id: existing.id },
     data: {
@@ -411,10 +429,10 @@ export async function deleteInventoryItemRecord(id: string): Promise<Result> {
   const g = await guard("inventory.manage");
   if ("error" in g) return g;
   const existing = await prisma.inventoryItem.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Artigo não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.itemNotFound") };
   const movementCount = await prisma.inventoryMovement.count({ where: { clinicId: g.clinicId, itemId: id } });
   const purchaseItemCount = await prisma.purchaseItem.count({ where: { itemId: id } });
-  if (movementCount > 0 || purchaseItemCount > 0) return { error: "Não pode apagar um artigo com movimentos ou compras associadas." };
+  if (movementCount > 0 || purchaseItemCount > 0) return { error: g.t("catalog.errors.itemInUse") };
   await prisma.inventoryItem.delete({ where: { id: existing.id } });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "inventory.delete", entity: "InventoryItem", entityId: existing.id });
   revalidatePath("/stock");
@@ -426,11 +444,11 @@ export async function createServiceRecord(values: Values): Promise<Result> {
   const g = await guard("service.manage");
   if ("error" in g) return g;
   const name = nonEmpty(values.name);
-  if (name.length < 2) return { error: "Indique o nome do serviço." };
+  if (name.length < 2) return { error: g.t("catalog.errors.serviceName") };
   const dup = await prisma.service.findFirst({ where: { clinicId: g.clinicId, name } });
-  if (dup) return { error: "Já existe um serviço com esse nome." };
-  const price = parseMZN(values.basePrice || "0");
-  if (price <= 0) return { error: "Indique um preço válido." };
+  if (dup) return { error: g.t("catalog.errors.serviceDuplicate") };
+  const price = parseMoneyInput(values.basePrice || "0");
+  if (price === null || price <= 0) return { error: g.t("catalog.errors.invalidPrice") };
   const source = ["CONSULTA", "EXAME", "PROCEDIMENTO", "PRODUTO", "OUTRO"].includes(values.source)
     ? (values.source as never)
     : ("EXAME" as never);
@@ -454,13 +472,13 @@ export async function updateServiceRecord(id: string, values: Values): Promise<R
   const g = await guard("service.manage");
   if ("error" in g) return g;
   const existing = await prisma.service.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Serviço não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.serviceNotFound") };
   const name = nonEmpty(values.name);
-  if (name.length < 2) return { error: "Indique o nome do serviço." };
+  if (name.length < 2) return { error: g.t("catalog.errors.serviceName") };
   const dup = await prisma.service.findFirst({ where: { clinicId: g.clinicId, name, NOT: { id } } });
-  if (dup) return { error: "Já existe um serviço com esse nome." };
-  const price = parseMZN(values.basePrice || "0");
-  if (price <= 0) return { error: "Indique um preço válido." };
+  if (dup) return { error: g.t("catalog.errors.serviceDuplicate") };
+  const price = parseMoneyInput(values.basePrice || "0");
+  if (price === null || price <= 0) return { error: g.t("catalog.errors.invalidPrice") };
   const source = ["CONSULTA", "EXAME", "PROCEDIMENTO", "PRODUTO", "OUTRO"].includes(values.source)
     ? (values.source as never)
     : ("EXAME" as never);
@@ -483,10 +501,10 @@ export async function deleteServiceRecord(id: string): Promise<Result> {
   const g = await guard("service.manage");
   if ("error" in g) return g;
   const existing = await prisma.service.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Serviço não encontrado." };
+  if (!existing) return { error: g.t("catalog.errors.serviceNotFound") };
   const appointmentCount = await prisma.appointment.count({ where: { clinicId: g.clinicId, serviceId: id } });
   const invoiceItemCount = await prisma.invoiceItem.count({ where: { serviceId: id } });
-  if (appointmentCount > 0 || invoiceItemCount > 0) return { error: "Não pode apagar um serviço com marcações ou facturas associadas." };
+  if (appointmentCount > 0 || invoiceItemCount > 0) return { error: g.t("catalog.errors.serviceInUse") };
   await prisma.service.delete({ where: { id: existing.id } });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "service.delete", entity: "Service", entityId: existing.id });
   revalidatePath("/servicos");
@@ -498,9 +516,9 @@ export async function createExpenseRecord(values: Values): Promise<Result> {
   const g = await guard("finance.manage");
   if ("error" in g) return g;
   const description = nonEmpty(values.description);
-  if (description.length < 2) return { error: "Indique a descrição da despesa." };
-  const amount = parseMZN(values.amount || "0");
-  if (amount <= 0) return { error: "Indique um valor válido." };
+  if (description.length < 2) return { error: g.t("catalog.errors.expenseDescription") };
+  const amount = parseMoneyInput(values.amount || "0");
+  if (amount === null || amount <= 0) return { error: g.t("catalog.errors.invalidAmount") };
   const status = values.status === "PENDENTE" ? "PENDENTE" : "PAGA";
   const method = ["DINHEIRO", "MPESA", "EMOLA", "CARTAO", "TRANSFERENCIA"].includes(values.method) ? (values.method as never) : null;
   const e = await prisma.expense.create({
@@ -521,11 +539,11 @@ export async function updateExpenseRecord(id: string, values: Values): Promise<R
   const g = await guard("finance.manage");
   if ("error" in g) return g;
   const existing = await prisma.expense.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Despesa não encontrada." };
+  if (!existing) return { error: g.t("catalog.errors.expenseNotFound") };
   const description = nonEmpty(values.description);
-  if (description.length < 2) return { error: "Indique a descrição da despesa." };
-  const amount = parseMZN(values.amount || "0");
-  if (amount <= 0) return { error: "Indique um valor válido." };
+  if (description.length < 2) return { error: g.t("catalog.errors.expenseDescription") };
+  const amount = parseMoneyInput(values.amount || "0");
+  if (amount === null || amount <= 0) return { error: g.t("catalog.errors.invalidAmount") };
   const status = values.status === "PENDENTE" ? "PENDENTE" : "PAGA";
   const method = ["DINHEIRO", "MPESA", "EMOLA", "CARTAO", "TRANSFERENCIA"].includes(values.method) ? (values.method as never) : null;
   const updated = await prisma.expense.update({
@@ -549,7 +567,7 @@ export async function deleteExpenseRecord(id: string): Promise<Result> {
   const g = await guard("finance.manage");
   if ("error" in g) return g;
   const existing = await prisma.expense.findFirst({ where: { id, clinicId: g.clinicId }, select: { id: true } });
-  if (!existing) return { error: "Despesa não encontrada." };
+  if (!existing) return { error: g.t("catalog.errors.expenseNotFound") };
   await prisma.expense.delete({ where: { id: existing.id } });
   await audit({ clinicId: g.clinicId, userId: g.userId, action: "expense.delete", entity: "Expense", entityId: existing.id });
   revalidatePath("/financeiro");

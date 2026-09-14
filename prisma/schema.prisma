@@ -453,6 +453,11 @@ model User {
   customRole     Role?     @relation(fields: [customRoleId], references: [id])
   isActive       Boolean   @default(true)
   lastLoginAt    DateTime?
+  /// Preferências de interface desta pessoa. `locale` nulo = idioma da clínica.
+  locale         String?
+  theme          ThemePreference    @default(SYSTEM)
+  textSize       TextSizePreference @default(NORMAL)
+  reduceMotion   Boolean            @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -715,6 +720,11 @@ model Patient {
   @@index([clinicId, email])
   @@index([clinicId, birthDate])
   @@index([clinicId, isActive])
+  /// Índices de trigrama (pg_trgm) para pesquisa parcial — criados na migração
+  /// 20260901142000_patient_search_indexes. Declarados aqui para o `migrate dev` não os apagar.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "Patient_name_trgm_idx")
+  @@index([phone(ops: raw("gin_trgm_ops"))], type: Gin, map: "Patient_phone_trgm_idx")
+  @@index([email(ops: raw("gin_trgm_ops"))], type: Gin, map: "Patient_email_trgm_idx")
 }
 
 /// Vários documentos de identificação por paciente.
@@ -736,6 +746,7 @@ model PatientIdentityDocument {
   @@unique([clinicId, type, number])
   @@index([patientId])
   @@index([clinicId, number])
+  @@index([number(ops: raw("gin_trgm_ops"))], type: Gin, map: "PatientIdentityDocument_number_trgm_idx")
 }
 
 model PatientPortalAccess {
@@ -1779,4 +1790,17 @@ model LoginAttempt {
 
   @@index([email, createdAt])
   @@index([ipAddress, createdAt])
+}
+
+/// Tema da interface escolhido por cada utilizador.
+enum ThemePreference {
+  SYSTEM
+  LIGHT
+  DARK
+}
+
+/// Tamanho de texto da interface.
+enum TextSizePreference {
+  NORMAL
+  LARGE
 }

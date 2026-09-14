@@ -7,30 +7,38 @@ import type { PaymentMethod } from "@prisma/client";
 import { audit } from "@/lib/audit";
 import { requireUser } from "@/lib/auth";
 import { reconcileBilling } from "@/lib/domain/billing";
-import { parseMZN } from "@/lib/money";
+import { parseMoneyInput } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
+import { getFormatters, getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
 const PAYMENT_METHODS = ["DINHEIRO", "MPESA", "EMOLA", "CARTAO", "TRANSFERENCIA", "SEGURADORA"] as const;
-const paymentSchema = z.object({
-  amount: z.string().trim().min(1, "Indique o valor recebido."),
-  method: z.enum(PAYMENT_METHODS, { error: "Selecione um método de pagamento." }),
-  reference: z.string().trim().max(120).optional().default(""),
-  fromInsurer: z.boolean(),
-});
 
-export type PaymentValues = z.input<typeof paymentSchema>;
+function paymentSchema(t: Translator) {
+  return z.object({
+    amount: z.string().trim().min(1, t("finance.payment.errors.amountRequired")),
+    method: z.enum(PAYMENT_METHODS, { error: t("finance.payment.errors.methodRequired") }),
+    reference: z.string().trim().max(120).optional().default(""),
+    fromInsurer: z.boolean(),
+  });
+}
+
+export type PaymentValues = z.input<ReturnType<typeof paymentSchema>>;
 export type BillingActionResult = { ok: true; paymentId: string; receiptNumber: string } | { error: string };
 
 class BillingError extends Error {}
 
 export async function registerInvoicePayment(invoiceId: string, values: PaymentValues): Promise<BillingActionResult> {
   const user = await requireUser();
-  if (!can(user.role, "finance.manage")) return { error: "Sem permissão para registar pagamentos." };
-  const parsed = paymentSchema.safeParse(values);
+  const t = await getTranslator();
+  if (!can(user.role, "finance.manage")) return { error: t("finance.payment.errors.noPermission") };
+  const parsed = paymentSchema(t).safeParse(values);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const amount = parseMZN(parsed.data.amount);
-  if (amount <= 0) return { error: "O valor deve ser superior a zero." };
+  const amount = parseMoneyInput(parsed.data.amount);
+  if (amount === null) return { error: t("finance.payment.errors.invalidAmount") };
+  if (amount <= 0) return { error: t("finance.payment.errors.amountPositive") };
+  const f = await getFormatters();
 
   const receiptNumber = `REC-${new Date().getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`;
   let result: { paymentId: string; patientId: string; invoiceId: string };
@@ -43,14 +51,14 @@ export async function registerInvoicePayment(invoiceId: string, values: PaymentV
           payments: { select: { amount: true, fromInsurer: true, method: true } },
         },
       });
-      if (!invoice) throw new BillingError("Fatura não encontrada ou anulada.");
+      if (!invoice) throw new BillingError(t("finance.payment.errors.invoiceNotFound"));
 
       const patientPaid = invoice.payments.filter((payment) => !payment.fromInsurer).reduce((sum, payment) => sum + payment.amount, 0);
       const insurerPaid = invoice.payments.filter((payment) => payment.fromInsurer).reduce((sum, payment) => sum + payment.amount, 0);
       const before = reconcileBilling({ patientDue: invoice.patientDue, insurerDue: invoice.insurerDue, patientPaid, insurerPaid });
       const available = parsed.data.fromInsurer ? before.insurerOutstanding : before.patientOutstanding;
-      if (parsed.data.fromInsurer && invoice.insurerDue === 0) throw new BillingError("Esta fatura não possui saldo atribuído à seguradora.");
-      if (amount > available) throw new BillingError(`O valor excede o saldo disponível de ${(available / 100).toFixed(2)} MZN.`);
+      if (parsed.data.fromInsurer && invoice.insurerDue === 0) throw new BillingError(t("finance.payment.errors.noInsurerBalance"));
+      if (amount > available) throw new BillingError(t("finance.payment.errors.exceedsBalance", { amount: f.moneyExact(available) }));
 
       const after = reconcileBilling({
         patientDue: invoice.patientDue,
@@ -82,7 +90,7 @@ export async function registerInvoicePayment(invoiceId: string, values: PaymentV
       return { paymentId: created.id, patientId: invoice.patientId, invoiceId: invoice.id };
     }, { isolationLevel: "Serializable" });
   } catch (error) {
-    return { error: error instanceof BillingError ? error.message : "Não foi possível registar o pagamento. Atualize a página e tente novamente." };
+    return { error: error instanceof BillingError ? error.message : t("finance.payment.errors.generic") };
   }
 
   await audit({

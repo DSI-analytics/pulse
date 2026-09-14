@@ -16,12 +16,12 @@ import {
   createAppointment,
   type BookingContext,
 } from "@/server/booking-actions";
-import { formatMZN } from "@/lib/money";
-import { formatTime } from "@/lib/datetime";
+import { useFormat, useT } from "@/i18n/client";
 
 type Patient = { id: string; code: string; name: string; phone: string | null };
 
 export function NovaMarcacao({ variant = "default" }: { variant?: "default" | "compact" }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
 
   React.useEffect(() => {
@@ -43,12 +43,14 @@ export function NovaMarcacao({ variant = "default" }: { variant?: "default" | "c
   return (
     <>
       {variant === "compact" ? (
-        <Button size="icon" onClick={() => setOpen(true)} aria-label="Nova Marcação">
+        <Button size="icon" onClick={() => setOpen(true)} aria-label={t("agenda.booking.newAppointment")}>
           <Plus />
         </Button>
       ) : (
-        <Button onClick={() => setOpen(true)} className="gap-1.5">
-          <Plus className="size-4" /> Nova Marcação
+        // Abaixo de sm fica só o ícone: com o texto, o botão empurrava o menu do
+        // utilizador para fora do ecrã em telemóveis.
+        <Button onClick={() => setOpen(true)} aria-label={t("agenda.booking.newAppointment")} className="gap-1.5 max-sm:size-10 max-sm:px-0">
+          <Plus className="size-4" /> <span className="max-sm:sr-only">{t("agenda.booking.newAppointment")}</span>
         </Button>
       )}
       {open && <NovaMarcacaoDialog onClose={() => setOpen(false)} />}
@@ -66,6 +68,8 @@ function todayLocal(): string {
 function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
+  const f = useFormat();
   const [ctx, setCtx] = React.useState<BookingContext | null>(null);
 
   // patient
@@ -98,8 +102,8 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
       setTimeout(() => setResults([]), 0);
       return;
     }
-    const t = setTimeout(async () => setResults((await searchPatients(query)) as Patient[]), 220);
-    return () => clearTimeout(t);
+    const timer = setTimeout(async () => setResults((await searchPatients(query)) as Patient[]), 220);
+    return () => clearTimeout(timer);
   }, [query, patient, newMode]);
 
   const doctors = React.useMemo(
@@ -161,21 +165,21 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
       setPatient(res.patient);
       setNewMode(false);
       setError(null);
-      toast(`Paciente ${res.patient.name} registado`);
+      toast(t("agenda.booking.patientRegistered", { name: res.patient.name }));
     }
   }
 
   async function handleSubmit() {
     setError(null);
-    if (!patient) return setError("Selecione ou registe um paciente.");
-    if (!doctorId) return setError("Selecione o médico.");
-    if (!date || !time) return setError("Escolha uma hora em que o médico esteja disponível.");
-    if (!availableSlots.includes(time)) return setError("A hora escolhida não está disponível para o médico.");
-    if (needsService && !serviceId) return setError("Indique qual o exame/procedimento a efectuar.");
+    if (!patient) return setError(t("agenda.booking.errors.selectPatient"));
+    if (!doctorId) return setError(t("agenda.booking.errors.selectDoctor"));
+    if (!date || !time) return setError(t("agenda.booking.errors.chooseAvailableTime"));
+    if (!availableSlots.includes(time)) return setError(t("agenda.booking.errors.timeUnavailable"));
+    if (needsService && !serviceId) return setError(t("agenda.booking.errors.serviceRequired"));
 
     const startAt = time;
     if (new Date(startAt).getTime() < Date.now() - 2 * 60_000) {
-      return setError("Não é possível agendar numa data/hora passada.");
+      return setError(t("agenda.booking.errors.pastDate"));
     }
 
     setSaving(true);
@@ -190,7 +194,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
     });
     setSaving(false);
     if ("error" in res && res.error) return setError(res.error);
-    toast("Marcação criada com sucesso");
+    toast(t("agenda.booking.created"));
     router.refresh();
     onClose();
   }
@@ -199,16 +203,16 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
     <Modal
       open
       onClose={onClose}
-      title="Nova Marcação"
-      description="Registe uma marcação em segundos — sem sair do ecrã atual."
+      title={t("agenda.booking.newAppointment")}
+      description={t("agenda.booking.description")}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
-            Cancelar
+            {t("common.cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={saving || !patient || !doctorId}>
             {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-            Confirmar marcação
+            {t("agenda.booking.confirm")}
           </Button>
         </>
       }
@@ -216,7 +220,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
       <div className="space-y-4">
         {/* Patient */}
         <div>
-          <Label>Paciente</Label>
+          <Label>{t("agenda.booking.patient")}</Label>
           {patient ? (
             <div className="mt-1.5 flex items-center justify-between rounded-md border border-border bg-surface-2 px-3 py-2">
               <div>
@@ -227,19 +231,19 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
                 </p>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setPatient(null)}>
-                Alterar
+                {t("agenda.booking.change")}
               </Button>
             </div>
           ) : newMode ? (
             <div className="mt-1.5 space-y-2 rounded-md border border-border p-3">
-              <Input placeholder="Nome completo" value={newName} onChange={(e) => setNewName(e.target.value)} />
-              <Input placeholder="Telefone (84…)" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
+              <Input placeholder={t("agenda.booking.fullName")} value={newName} onChange={(e) => setNewName(e.target.value)} />
+              <Input placeholder={t("agenda.booking.phonePlaceholder")} value={newPhone} onChange={(e) => setNewPhone(e.target.value)} />
               <div className="flex gap-2">
                 <Button size="sm" onClick={handleQuickCreate}>
-                  <UserPlus className="size-4" /> Registar
+                  <UserPlus className="size-4" /> {t("agenda.booking.register")}
                 </Button>
                 <Button size="sm" variant="ghost" onClick={() => setNewMode(false)}>
-                  Voltar à pesquisa
+                  {t("agenda.booking.backToSearch")}
                 </Button>
               </div>
             </div>
@@ -248,12 +252,12 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-subtle-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Pesquisar por nome, telefone ou nº de paciente"
+                placeholder={t("agenda.booking.searchPlaceholder")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
               />
               {results.length > 0 && (
-                <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-md border border-border bg-card shadow-lg">
+                <div className="glass-strong animate-pop absolute z-10 mt-1 w-full overflow-hidden rounded-[16px]">
                   {results.map((p) => (
                     <button
                       key={p.id}
@@ -276,7 +280,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
                 }}
                 className="mt-1.5 inline-flex items-center gap-1.5 text-[13px] font-medium text-primary hover:underline"
               >
-                <UserPlus className="size-3.5" /> Paciente novo? Registar aqui
+                <UserPlus className="size-3.5" /> {t("agenda.booking.newPatientLink")}
               </button>
             </div>
           )}
@@ -285,7 +289,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
         {/* Specialty + doctor */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Especialidade</Label>
+            <Label>{t("agenda.booking.specialty")}</Label>
             <Select
               className="mt-1.5"
               value={specialtyId}
@@ -294,7 +298,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
                 setDoctorId("");
               }}
             >
-              <option value="">Todas</option>
+              <option value="">{t("agenda.booking.allSpecialties")}</option>
               {ctx?.specialties.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -303,9 +307,9 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
             </Select>
           </div>
           <div>
-            <Label>Médico</Label>
+            <Label>{t("agenda.booking.doctor")}</Label>
             <Select className="mt-1.5" value={doctorId} onChange={(e) => setDoctorId(e.target.value)}>
-              <option value="">Selecionar…</option>
+              <option value="">{t("agenda.booking.select")}</option>
               {doctors.map((d) => (
                 <option key={d.id} value={d.id}>
                   {d.name}
@@ -318,7 +322,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
         {/* Date + time + type */}
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <Label>Data</Label>
+            <Label>{t("agenda.booking.date")}</Label>
             <Input
               type="date"
               className="mt-1.5"
@@ -328,13 +332,13 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
             />
           </div>
           <div>
-            <Label>Hora</Label>
+            <Label>{t("agenda.booking.time")}</Label>
             {doctorId && availableSlots.length === 0 ? (
               <div className="mt-1.5">
                 <Select value="" disabled>
                   <option value=""> </option>
                 </Select>
-                <p className="mt-1 text-[11px] text-muted-foreground">Sem horários livres para esta data.</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">{t("agenda.booking.noSlots")}</p>
               </div>
             ) : (
               <Select
@@ -343,17 +347,17 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setTime(e.target.value)}
                 disabled={!doctorId}
               >
-                <option value="">{doctorId ? "Selecionar hora" : "Selecione o médico"}</option>
+                <option value="">{doctorId ? t("agenda.booking.selectTime") : t("agenda.booking.selectDoctorFirst")}</option>
                 {availableSlots.map((slot) => (
                   <option key={slot} value={slot}>
-                    {formatTime(slot)}
+                    {f.time(slot)}
                   </option>
                 ))}
               </Select>
             )}
           </div>
           <div>
-            <Label>Tipo</Label>
+            <Label>{t("agenda.booking.type")}</Label>
             <Select
               className="mt-1.5"
               value={type}
@@ -362,10 +366,10 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
                 setServiceId("");
               }}
             >
-              <option value="CONSULTA">Consulta</option>
-              <option value="RETORNO">Retorno</option>
-              <option value="EXAME">Exame</option>
-              <option value="PROCEDIMENTO">Procedimento</option>
+              <option value="CONSULTA">{t("agenda.types.CONSULTA")}</option>
+              <option value="RETORNO">{t("agenda.types.RETORNO")}</option>
+              <option value="EXAME">{t("agenda.types.EXAME")}</option>
+              <option value="PROCEDIMENTO">{t("agenda.types.PROCEDIMENTO")}</option>
             </Select>
           </div>
         </div>
@@ -373,18 +377,18 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
         {/* Which exam / procedure */}
         {needsService && (
           <div>
-            <Label>{type === "EXAME" ? "Exame a efectuar" : "Procedimento a efectuar"}</Label>
+            <Label>{type === "EXAME" ? t("agenda.booking.examToPerform") : t("agenda.booking.procedureToPerform")}</Label>
             <Select className="mt-1.5" value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-              <option value="">Selecionar…</option>
+              <option value="">{t("agenda.booking.select")}</option>
               {ctx?.services.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.category} · {s.name} — {formatMZN(s.basePrice)}
+                  {s.category} · {s.name} — {f.money(s.basePrice)}
                 </option>
               ))}
             </Select>
             {ctx && ctx.services.length === 0 && (
               <p className="mt-1.5 text-xs text-muted-foreground">
-                Ainda não há exames cadastrados. Adicione-os em Serviços.
+                {t("agenda.booking.noServices")}
               </p>
             )}
           </div>
@@ -392,9 +396,9 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
 
         {/* Coverage */}
         <div>
-          <Label>Cobertura</Label>
+          <Label>{t("agenda.booking.coverage")}</Label>
           <Select className="mt-1.5" value={coverage} onChange={(e) => setCoverage(e.target.value)}>
-            <option value="PARTICULAR">Particular</option>
+            <option value="PARTICULAR">{t("agenda.booking.private")}</option>
             {ctx?.plans.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.insurer} · {p.name}
@@ -404,8 +408,8 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="flex items-center justify-between rounded-md bg-surface-2 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">Valor previsto</span>
-          <span className="font-semibold tabular">{formatMZN(price)}</span>
+          <span className="text-muted-foreground">{t("agenda.booking.expectedAmount")}</span>
+          <span className="font-semibold tabular">{f.money(price)}</span>
         </div>
 
         {error && (

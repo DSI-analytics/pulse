@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast";
+import { useT } from "@/i18n/client";
 
 export interface CrudField {
   name: string;
@@ -31,7 +32,7 @@ export function RecordCrudButton({
   fields,
   updateAction,
   deleteAction,
-  toastSuccess = "Registo atualizado com sucesso",
+  toastSuccess,
   redirectOnDelete,
 }: {
   id: string;
@@ -45,6 +46,7 @@ export function RecordCrudButton({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -63,28 +65,28 @@ export function RecordCrudButton({
     setError(null);
     for (const f of fields) {
       if (f.required && !values[f.name]?.trim()) {
-        return setError(`Preencha o campo “${f.label}”.`);
+        return setError(t("common.requiredField", { field: f.label }));
       }
     }
     setSaving(true);
     const res = await updateAction(id, values);
     setSaving(false);
     if ("error" in res) return setError(res.error);
-    toast(toastSuccess);
+    toast(toastSuccess ?? t("common.recordUpdated"));
     router.refresh();
     setOpen(false);
   }
 
   async function remove() {
     if (!deleteAction) return;
-    const confirmed = window.confirm(`Tem a certeza que pretende apagar este registo?`);
+    const confirmed = window.confirm(t("common.confirmDeleteRecord"));
     if (!confirmed) return;
 
     setSaving(true);
     const res = await deleteAction(id);
     setSaving(false);
     if ("error" in res) return setError(res.error);
-    toast("Registo apagado com sucesso");
+    toast(t("common.recordDeleted"));
     setOpen(false);
     if (redirectOnDelete) {
       router.replace(redirectOnDelete);
@@ -97,11 +99,11 @@ export function RecordCrudButton({
     <>
       <div className="flex items-center gap-2">
         <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-          <Pencil className="size-3.5" /> Editar
+          <Pencil className="size-3.5" /> {t("common.edit")}
         </Button>
         {deleteAction && (
           <Button variant="danger" size="sm" onClick={remove} disabled={saving}>
-            <Trash2 className="size-3.5" /> Apagar
+            <Trash2 className="size-3.5" /> {t("common.remove")}
           </Button>
         )}
       </div>
@@ -114,9 +116,9 @@ export function RecordCrudButton({
           description={description}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button variant="ghost" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
               <Button onClick={submit} disabled={saving}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Guardar
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("common.save")}
               </Button>
             </>
           }
@@ -136,7 +138,7 @@ export function RecordCrudButton({
                     value={values[f.name] ?? ""}
                     onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
                   >
-                    <option value="">Selecionar…</option>
+                    <option value="">{t("common.selectPlaceholder")}</option>
                     {f.options?.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}

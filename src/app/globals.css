@@ -1,79 +1,280 @@
 @import "tailwindcss";
 
 /*
-  Pulso design system — restrained, premium SaaS.
-  Neutral cool-grey canvas, single teal accent, semantic status colours.
+  Pulso design system — "vivid & sharp".
+
+  Regras deste ficheiro (e de todo o UI do projecto):
+   1. Todas as cores em OKLCH. Gradientes interpolam em OKLCH (`in oklch`), para
+      não atravessarem a "zona morta" cinzenta entre cores.
+   2. Cores vivas a sério: marca e estados usam o croma perto do máximo que o
+      ecrã sRGB consegue mostrar para cada tom (medido), e não tons "pastel".
+      A marca é um verde-esmeralda (hue 150): o verde-azulado anterior (hue 180)
+      não passa de C≈0,10 com texto branco legível — por isso parecia apagado.
+   3. Texto nunca herda opacidade: estados secundários/desactivados usam tons
+      sólidos. As animações movem (transform) sem desvanecer blocos com texto.
+   4. Qualquer texto sobre qualquer fundo ≥ 4,5:1 (WCAG AA), medido.
+   5. Bordas e divisórias de 1px em cores sólidas — âncoras visuais nítidas.
+   6. Sem desfoque no conteúdo: nada de manchas de luz difusa nem sombras largas e
+      esbatidas. Sombras curtas e definidas; o brilho neon é justo ao contorno.
+   7. Liquid glass só nas camadas flutuantes (barra lateral, cabeçalho, navegação
+      móvel, menus, folhas, toasts). O desfoque aplica-se ao que passa POR TRÁS
+      do vidro (backdrop-filter) e aumenta a saturação dessas cores; o texto em
+      cima do vidro é nítido e mantém ≥ 4,5:1 graças a uma opacidade mínima do
+      material, medida contra o fundo mais desfavorável. Aresta de 1px sólida e
+      brilho especular justo. Sem suporte ou com "reduzir transparência": sólido.
+
+  O tema escuro troca os tokens na classe `.dark`.
 */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
-  --background: #f6f8f8;
-  --surface: #ffffff;
-  --surface-2: #f0f4f3;
-  --foreground: #10201c;
-  --muted: #f0f4f3;
-  --muted-foreground: #5c716b;
-  --subtle-foreground: #859891;
-  --card: #ffffff;
-  --card-foreground: #10201c;
-  --border: #e3eae7;
-  --border-strong: #d3ddd9;
-  --input: #e3eae7;
-  --ring: #0c7c74;
+  /* Canvas e superfícies — brancas e limpas, canvas com tom verde definido */
+  --background: oklch(96.4% 0.024 155);
+  --surface: oklch(100% 0 0);
+  --chrome: oklch(100% 0 0);
+  --surface-2: oklch(95.4% 0.03 155);
+  --fill-subtle: oklch(96.6% 0.024 155);
+  --fill: oklch(94.2% 0.036 155);
+  --fill-strong: oklch(90.8% 0.05 155);
+  --card: oklch(100% 0 0);
 
-  --primary: #0c7c74;
-  --primary-foreground: #ffffff;
-  --primary-muted: #e0efec;
+  /* Texto — quase preto com tom, cinzentos com cor (não "lavados") */
+  --foreground: oklch(17% 0.045 160);
+  --card-foreground: oklch(17% 0.045 160);
+  --muted: oklch(95.4% 0.03 155);
+  --muted-foreground: oklch(39% 0.06 160);
+  --subtle-foreground: oklch(45% 0.06 160);
 
-  --accent: #0c7c74;
-  --accent-foreground: #ffffff;
+  /* Linhas — sólidas e bem definidas */
+  --border: oklch(84% 0.05 155);
+  --border-strong: oklch(69% 0.08 155);
+  --input: oklch(56% 0.09 155);
+  --ring: oklch(55% 0.16 150);
 
-  --success: #1f9d57;
-  --success-muted: #e2f2e8;
-  --warning: #b26a06;
-  --warning-muted: #f6ecd8;
-  --danger: #cb4133;
-  --danger-muted: #f8e2df;
-  --info: #2563a8;
-  --info-muted: #e2ecf7;
+  /* Marca — esmeralda no limite de croma com texto branco AA */
+  --primary: oklch(48% 0.15 150);
+  --primary-hover: oklch(43% 0.14 150);
+  --primary-foreground: oklch(100% 0 0);
+  --primary-muted: oklch(92.5% 0.08 150);
+  --primary-edge: oklch(64% 0.17 150);
+  --accent: oklch(48% 0.15 150);
+  --accent-foreground: oklch(100% 0 0);
+  --neon: oklch(84% 0.23 148);
 
-  --radius: 0.7rem;
+  /* Estados — cada um no croma máximo legível do seu tom */
+  --success: oklch(51% 0.16 145);
+  --success-muted: oklch(93.5% 0.08 145);
+  --success-edge: oklch(64% 0.18 145);
+  --warning: oklch(51% 0.14 52);
+  --warning-muted: oklch(95% 0.07 80);
+  --warning-edge: oklch(72% 0.17 68);
+  --danger: oklch(50% 0.21 27);
+  --danger-hover: oklch(45% 0.19 27);
+  --danger-foreground: oklch(100% 0 0);
+  --danger-muted: oklch(94% 0.045 22);
+  --danger-edge: oklch(64% 0.22 27);
+  --info: oklch(51% 0.18 260);
+  --info-muted: oklch(94% 0.04 260);
+  --info-edge: oklch(64% 0.17 260);
+
+  /* Véu dos modais (sem texto por cima dele) */
+  --scrim: oklch(17% 0.045 160 / 0.46);
+
+  /* Liquid glass — material translúcido com brilho especular. A opacidade do
+     tom (canal alfa) é o mínimo que mantém o texto ≥ 4,5:1 mesmo quando passa
+     por baixo a área mais escura possível (um botão primário). */
+  --glass-tint: oklch(99% 0.012 155 / 0.84);
+  --glass-tint-strong: oklch(100% 0 0 / 0.88);
+  --glass-sheen: oklch(100% 0 0 / 0.55);
+  --glass-sheen-clear: oklch(100% 0 0 / 0);
+  --glass-edge: oklch(87% 0.045 155);
+  --glass-highlight: oklch(100% 0 0 / 0.9);
+  --glass-lowlight: oklch(100% 0 0 / 0.35);
+  --glass-prism: oklch(79% 0.12 190 / 0.16);
+  --glass-tooltip-tint: oklch(99% 0.012 155 / 0.4);
+  --canvas-wash-a: oklch(88% 0.1 151 / 0.42);
+  --canvas-wash-b: oklch(90% 0.08 245 / 0.28);
+  --glass-blur: 22px;
+  --glass-saturate: 190%;
+
+  /* Geometria */
+  --radius: 1rem;
+
+  /* Iluminação: sombras curtas e definidas, brilho neon justo */
+  --glow-primary: oklch(60% 0.2 150 / 0.55);
+  --glow-danger: oklch(58% 0.23 27 / 0.5);
+  --elevation-card: 0 1px 0 oklch(17% 0.045 160 / 0.05), 0 2px 6px -2px oklch(17% 0.045 160 / 0.14);
+  --elevation-card-hover: 0 1px 0 oklch(17% 0.045 160 / 0.06), 0 8px 18px -8px oklch(45% 0.14 150 / 0.34);
+  --elevation-pop: 0 18px 40px -16px oklch(17% 0.045 160 / 0.36), 0 4px 10px -4px oklch(17% 0.045 160 / 0.16);
+  --elevation-chrome: 0 4px 14px -8px oklch(17% 0.045 160 / 0.22);
+  --elevation-glow: 0 4px 14px -5px var(--glow-primary);
+  --elevation-glow-danger: 0 4px 14px -5px var(--glow-danger);
+
+  /* Movimento */
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 160ms;
+  --dur: 260ms;
+  --dur-slow: 420ms;
 }
 
+/* Tema escuro "neon": fundo quase preto com tom verde, acentos a brilhar. */
 .dark {
-  --background: #0a1210;
-  --surface: #101d19;
-  --surface-2: #16261f;
-  --foreground: #e9f1ee;
-  --muted: #16261f;
-  --muted-foreground: #96aaa3;
-  --subtle-foreground: #6c817b;
-  --card: #101d19;
-  --card-foreground: #e9f1ee;
-  --border: #20332c;
-  --border-strong: #2b4139;
-  --input: #20332c;
-  --ring: #2fb6a0;
+  --background: oklch(13% 0.03 160);
+  --surface: oklch(18% 0.036 160);
+  --chrome: oklch(16.5% 0.034 160);
+  --surface-2: oklch(21.5% 0.042 160);
+  --fill-subtle: oklch(20.5% 0.04 160);
+  --fill: oklch(24% 0.046 160);
+  --fill-strong: oklch(28% 0.052 160);
+  --card: oklch(18% 0.036 160);
 
-  --primary: #2fb6a0;
-  --primary-foreground: #05201b;
-  --primary-muted: #133330;
+  --foreground: oklch(97.5% 0.014 150);
+  --card-foreground: oklch(97.5% 0.014 150);
+  --muted: oklch(21.5% 0.042 160);
+  --muted-foreground: oklch(84% 0.05 155);
+  --subtle-foreground: oklch(75% 0.055 155);
 
-  --accent: #2fb6a0;
-  --accent-foreground: #05201b;
+  --border: oklch(35% 0.055 160);
+  --border-strong: oklch(47% 0.07 158);
+  --input: oklch(53% 0.08 155);
+  --ring: oklch(82% 0.22 150);
 
-  --success: #43bd74;
-  --success-muted: #123123;
-  --warning: #d99a34;
-  --warning-muted: #322611;
-  --danger: #e0685b;
-  --danger-muted: #351d1a;
-  --info: #5b9bd8;
-  --info-muted: #12263a;
+  --primary: oklch(80% 0.22 150);
+  --primary-hover: oklch(85% 0.2 150);
+  --primary-foreground: oklch(16% 0.05 155);
+  --primary-muted: oklch(30% 0.09 152);
+  --primary-edge: oklch(60% 0.18 150);
+  --accent: oklch(80% 0.22 150);
+  --accent-foreground: oklch(16% 0.05 155);
+  --neon: oklch(86% 0.23 148);
+
+  --success: oklch(80% 0.22 145);
+  --success-muted: oklch(29% 0.09 145);
+  --success-edge: oklch(60% 0.19 145);
+  --warning: oklch(84% 0.17 80);
+  --warning-muted: oklch(30% 0.08 70);
+  --warning-edge: oklch(64% 0.16 70);
+  --danger: oklch(72% 0.19 27);
+  --danger-hover: oklch(77% 0.16 27);
+  --danger-foreground: oklch(16% 0.05 25);
+  --danger-muted: oklch(29% 0.1 25);
+  --danger-edge: oklch(61% 0.21 27);
+  --info: oklch(76% 0.14 250);
+  --info-muted: oklch(29% 0.08 258);
+  --info-edge: oklch(60% 0.16 258);
+
+  --scrim: oklch(5% 0.02 160 / 0.66);
+
+  --glass-tint: oklch(17% 0.035 160 / 0.9);
+  --glass-tint-strong: oklch(19% 0.038 160 / 0.92);
+  --glass-sheen: oklch(100% 0 0 / 0.07);
+  --glass-sheen-clear: oklch(100% 0 0 / 0);
+  --glass-edge: oklch(42% 0.065 158);
+  --glass-highlight: oklch(100% 0 0 / 0.18);
+  --glass-lowlight: oklch(100% 0 0 / 0.05);
+  --glass-prism: oklch(78% 0.18 172 / 0.1);
+  --glass-tooltip-tint: oklch(17% 0.035 160 / 0.48);
+  --canvas-wash-a: oklch(38% 0.1 151 / 0.3);
+  --canvas-wash-b: oklch(34% 0.09 255 / 0.22);
+  --glass-blur: 26px;
+  --glass-saturate: 170%;
+
+  --glow-primary: oklch(80% 0.22 150 / 0.5);
+  --glow-danger: oklch(72% 0.19 27 / 0.45);
+  --elevation-card: 0 1px 2px oklch(0% 0 0 / 0.5), 0 4px 12px -6px oklch(0% 0 0 / 0.7);
+  --elevation-card-hover: 0 1px 2px oklch(0% 0 0 / 0.5), 0 8px 20px -10px oklch(70% 0.2 150 / 0.4);
+  --elevation-pop: 0 20px 44px -16px oklch(0% 0 0 / 0.85), 0 4px 12px -4px oklch(0% 0 0 / 0.5);
+  --elevation-chrome: 0 6px 16px -8px oklch(0% 0 0 / 0.7);
+  --elevation-glow: 0 0 0 1px oklch(80% 0.22 150 / 0.35), 0 4px 16px -4px var(--glow-primary);
+  --elevation-glow-danger: 0 0 0 1px oklch(72% 0.19 27 / 0.35), 0 4px 16px -4px var(--glow-danger);
 }
+/* Tema "sistema": segue o sistema operativo. Os tokens são uma cópia exacta do
+   bloco .dark acima — manter os dois em sincronia (o verificador de contraste
+   confirma que são iguais). */
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    --background: oklch(13% 0.03 160);
+    --surface: oklch(18% 0.036 160);
+    --chrome: oklch(16.5% 0.034 160);
+    --surface-2: oklch(21.5% 0.042 160);
+    --fill-subtle: oklch(20.5% 0.04 160);
+    --fill: oklch(24% 0.046 160);
+    --fill-strong: oklch(28% 0.052 160);
+    --card: oklch(18% 0.036 160);
+
+    --foreground: oklch(97.5% 0.014 150);
+    --card-foreground: oklch(97.5% 0.014 150);
+    --muted: oklch(21.5% 0.042 160);
+    --muted-foreground: oklch(84% 0.05 155);
+    --subtle-foreground: oklch(75% 0.055 155);
+
+    --border: oklch(35% 0.055 160);
+    --border-strong: oklch(47% 0.07 158);
+    --input: oklch(53% 0.08 155);
+    --ring: oklch(82% 0.22 150);
+
+    --primary: oklch(80% 0.22 150);
+    --primary-hover: oklch(85% 0.2 150);
+    --primary-foreground: oklch(16% 0.05 155);
+    --primary-muted: oklch(30% 0.09 152);
+    --primary-edge: oklch(60% 0.18 150);
+    --accent: oklch(80% 0.22 150);
+    --accent-foreground: oklch(16% 0.05 155);
+    --neon: oklch(86% 0.23 148);
+
+    --success: oklch(80% 0.22 145);
+    --success-muted: oklch(29% 0.09 145);
+    --success-edge: oklch(60% 0.19 145);
+    --warning: oklch(84% 0.17 80);
+    --warning-muted: oklch(30% 0.08 70);
+    --warning-edge: oklch(64% 0.16 70);
+    --danger: oklch(72% 0.19 27);
+    --danger-hover: oklch(77% 0.16 27);
+    --danger-foreground: oklch(16% 0.05 25);
+    --danger-muted: oklch(29% 0.1 25);
+    --danger-edge: oklch(61% 0.21 27);
+    --info: oklch(76% 0.14 250);
+    --info-muted: oklch(29% 0.08 258);
+    --info-edge: oklch(60% 0.16 258);
+
+    --scrim: oklch(5% 0.02 160 / 0.66);
+
+    --glass-tint: oklch(17% 0.035 160 / 0.9);
+    --glass-tint-strong: oklch(19% 0.038 160 / 0.92);
+    --glass-sheen: oklch(100% 0 0 / 0.07);
+    --glass-sheen-clear: oklch(100% 0 0 / 0);
+    --glass-edge: oklch(42% 0.065 158);
+    --glass-highlight: oklch(100% 0 0 / 0.18);
+    --glass-lowlight: oklch(100% 0 0 / 0.05);
+    --glass-prism: oklch(78% 0.18 172 / 0.1);
+    --glass-tooltip-tint: oklch(17% 0.035 160 / 0.48);
+    --canvas-wash-a: oklch(38% 0.1 151 / 0.3);
+    --canvas-wash-b: oklch(34% 0.09 255 / 0.22);
+    --glass-blur: 26px;
+    --glass-saturate: 170%;
+
+    --glow-primary: oklch(80% 0.22 150 / 0.5);
+    --glow-danger: oklch(72% 0.19 27 / 0.45);
+    --elevation-card: 0 1px 2px oklch(0% 0 0 / 0.5), 0 4px 12px -6px oklch(0% 0 0 / 0.7);
+    --elevation-card-hover: 0 1px 2px oklch(0% 0 0 / 0.5), 0 8px 20px -10px oklch(70% 0.2 150 / 0.4);
+    --elevation-pop: 0 20px 44px -16px oklch(0% 0 0 / 0.85), 0 4px 12px -4px oklch(0% 0 0 / 0.5);
+    --elevation-chrome: 0 6px 16px -8px oklch(0% 0 0 / 0.7);
+    --elevation-glow: 0 0 0 1px oklch(80% 0.22 150 / 0.35), 0 4px 16px -4px var(--glow-primary);
+    --elevation-glow-danger: 0 0 0 1px oklch(72% 0.19 27 / 0.35), 0 4px 16px -4px var(--glow-danger);
+  }
+}
+
 
 @theme inline {
   --color-background: var(--background);
   --color-surface: var(--surface);
+  --color-chrome: var(--chrome);
   --color-surface-2: var(--surface-2);
+  --color-fill-subtle: var(--fill-subtle);
+  --color-fill: var(--fill);
+  --color-fill-strong: var(--fill-strong);
   --color-foreground: var(--foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
@@ -85,77 +286,321 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-primary-muted: var(--primary-muted);
+  --color-primary-edge: var(--primary-edge);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-neon: var(--neon);
   --color-success: var(--success);
   --color-success-muted: var(--success-muted);
+  --color-success-edge: var(--success-edge);
   --color-warning: var(--warning);
   --color-warning-muted: var(--warning-muted);
+  --color-warning-edge: var(--warning-edge);
   --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-foreground: var(--danger-foreground);
   --color-danger-muted: var(--danger-muted);
+  --color-danger-edge: var(--danger-edge);
   --color-info: var(--info);
   --color-info-muted: var(--info-muted);
+  --color-info-edge: var(--info-edge);
+  --color-scrim: var(--scrim);
 
+  --radius-xl: calc(var(--radius) + 0.25rem);
   --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 0.2rem);
-  --radius-sm: calc(var(--radius) - 0.35rem);
+  --radius-md: calc(var(--radius) - 0.25rem);
+  --radius-sm: calc(var(--radius) - 0.5rem);
 
-  --font-sans: -apple-system, "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
-  --font-display: -apple-system, "SF Pro Display", system-ui, "Segoe UI", sans-serif;
-  --font-mono: "SF Mono", ui-monospace, "Menlo", monospace;
+  --shadow-card: var(--elevation-card);
+  --shadow-card-hover: var(--elevation-card-hover);
+  --shadow-pop: var(--elevation-pop);
+  --shadow-glow: var(--elevation-glow);
+  --shadow-glow-danger: var(--elevation-glow-danger);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, "Segoe UI Variable Text", "Segoe UI", Roboto, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Inter", system-ui, "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "Cascadia Mono", "Menlo", monospace;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Materiais — liquid glass nas camadas flutuantes, sólido no conteúdo
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Navegação e controlos flutuantes (barra lateral, cabeçalho, barra móvel).
+   Base sólida; com suporte, vidro: tom translúcido + brilho especular no topo
+   + aresta iluminada por dentro. O desfoque e a saturação são do FUNDO. */
+@utility glass {
+  background-color: var(--chrome);
+  border: 1px solid var(--glass-edge);
+  background-clip: padding-box;
+  box-shadow: inset 0 1px 0 0 var(--glass-highlight), inset 0 -1px 0 0 var(--glass-lowlight), var(--elevation-chrome);
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background-color: var(--glass-tint);
+    background-image:
+      radial-gradient(120% 85% at 8% -18% in oklch, var(--glass-highlight), var(--glass-sheen-clear) 55%),
+      linear-gradient(112deg in oklch, var(--glass-sheen-clear) 30%, var(--glass-prism) 50%, var(--glass-sheen-clear) 68%),
+      linear-gradient(180deg in oklch, var(--glass-sheen), var(--glass-sheen-clear) 48%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+}
+
+/* Folhas modais, menus, toasts, paleta: vidro mais denso, camada mais elevada. */
+@utility glass-strong {
+  background-color: var(--card);
+  border: 1px solid var(--glass-edge);
+  background-clip: padding-box;
+  box-shadow: inset 0 1px 0 0 var(--glass-highlight), inset 0 -1px 0 0 var(--glass-lowlight), var(--elevation-pop);
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background-color: var(--glass-tint-strong);
+    background-image:
+      radial-gradient(115% 80% at 10% -16% in oklch, var(--glass-highlight), var(--glass-sheen-clear) 58%),
+      linear-gradient(112deg in oklch, var(--glass-sheen-clear) 34%, var(--glass-prism) 52%, var(--glass-sheen-clear) 70%),
+      linear-gradient(180deg in oklch, var(--glass-sheen), var(--glass-sheen-clear) 40%);
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(var(--glass-saturate));
+  }
+}
+
+/* Barras de controlo discretas (filtros, separadores): vidro leve, sem sombra. */
+@utility glass-thin {
+  background-color: var(--chrome);
+  border: 1px solid var(--glass-edge);
+  box-shadow: inset 0 1px 0 0 var(--glass-highlight);
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background-color: var(--glass-tint);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+}
+
+/* Tooltip dos indicadores: vidro leve o suficiente para deixar o contexto
+   visível, mas com desfoque e contorno que preservam a leitura. */
+@utility glass-tooltip {
+  background-color: var(--glass-tooltip-tint);
+  border: 1px solid var(--glass-edge);
+  background-clip: padding-box;
+  box-shadow:
+    inset 0 1px 0 0 var(--glass-highlight),
+    0 12px 26px -18px oklch(17% 0.045 160 / 0.34);
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    background-image: linear-gradient(180deg in oklch, oklch(100% 0 0 / 0.12), transparent 56%);
+    -webkit-backdrop-filter: blur(8px) saturate(135%);
+    backdrop-filter: blur(8px) saturate(135%);
+  }
+}
+
+/* Cartão de conteúdo. A cor da aresta pode ser trocada por consumidor com
+   `[--card-border:var(--warning-edge)]`, sem conflito de especificidade. */
+@utility surface-card {
+  background-color: var(--card);
+  border: 1px solid var(--card-border, var(--border));
+  box-shadow: var(--elevation-card);
+}
+
+/* Feedback ao premir: desce 1px em vez de escalar (escalar rasteriza o texto). */
+@utility press {
+  transition: transform var(--dur-fast) var(--ease-spring), background-color var(--dur-fast) ease,
+    border-color var(--dur-fast) ease, color var(--dur-fast) ease, box-shadow var(--dur) var(--ease-out);
+  &:active:not(:disabled) {
+    transform: translateY(1px);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Base
+   ───────────────────────────────────────────────────────────────────────── */
 
 * {
   border-color: var(--border);
 }
 
 html {
+  color-scheme: light;
+}
+html.dark {
+  color-scheme: dark;
+}
+html[data-theme="system"] {
   color-scheme: light dark;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
+  background-image:
+    linear-gradient(128deg in oklch, var(--canvas-wash-a), transparent 34%),
+    linear-gradient(308deg in oklch, var(--canvas-wash-b), transparent 38%);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-synthesis: none;
   font-feature-settings: "cv11", "ss01";
 }
 
 h1, h2, h3, h4 {
   font-family: var(--font-display);
-  letter-spacing: -0.011em;
+  letter-spacing: -0.015em;
+}
+
+::selection {
+  background: var(--primary-muted);
+  color: var(--foreground);
 }
 
 .tabular {
   font-variant-numeric: tabular-nums;
 }
 
-/* Focus ring */
+/* Anel de foco sólido, visível só para teclado. */
 :where(button, a, input, select, textarea, [tabindex]):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
-/* Thin scrollbars */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .animate-in {
-    animation: fadeIn 0.24s ease both;
-  }
-}
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: none; }
+svg {
+  transition: color var(--dur-fast) ease;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Movimento — só transform em blocos com texto; opacidade apenas no véu.
+   ───────────────────────────────────────────────────────────────────────── */
+
+@keyframes rise {
+  from { transform: translateY(6px); }
+  to { transform: none; }
+}
+
+@keyframes pop-in {
+  from { transform: translateY(-6px); }
+  to { transform: none; }
+}
+
+@keyframes sheet-in {
+  from { transform: translateY(18px); }
+  to { transform: none; }
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+
+@keyframes toast-in {
+  from { transform: translateY(24px); }
+  to { transform: none; }
+}
+
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .animate-in,
+  .animate-pop {
+    animation: pop-in var(--dur) var(--ease-spring) both;
+  }
+
+  .animate-sheet {
+    animation: sheet-in var(--dur-slow) var(--ease-spring) both;
+  }
+
+  .animate-backdrop {
+    animation: backdrop-in var(--dur) ease both;
+  }
+
+  .animate-rise {
+    animation: rise var(--dur) var(--ease-out) both;
+  }
+
+  .animate-toast {
+    animation: toast-in var(--dur-slow) var(--ease-spring) both;
+  }
+
+  .page-enter > * {
+    animation: rise var(--dur-slow) var(--ease-out) both;
+  }
+  .page-enter > *:nth-child(2) { animation-delay: 30ms; }
+  .page-enter > *:nth-child(3) { animation-delay: 60ms; }
+  .page-enter > *:nth-child(4) { animation-delay: 90ms; }
+  .page-enter > *:nth-child(n + 5) { animation-delay: 120ms; }
+
+  @media (max-width: 639px) {
+    .animate-sheet {
+      animation: sheet-up var(--dur-slow) var(--ease-spring) both;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Preferências de interface por utilizador (atributos no <html>, definidos
+   no servidor a partir da conta — sem script inline nem "flash" de tema).
+   ───────────────────────────────────────────────────────────────────────── */
+
+html[data-text-size="large"] {
+  font-size: 112.5%;
+}
+
+html[data-motion="reduce"] *,
+html[data-motion="reduce"] *::before,
+html[data-motion="reduce"] *::after {
+  animation-duration: 1ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 1ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Quem pede menos transparência ao sistema recebe o material sólido. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .glass-thin,
+  .glass-tooltip {
+    background-color: var(--chrome) !important;
+    background-image: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+  .glass-strong {
+    background-color: var(--card) !important;
+    background-image: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Impressão
+   ───────────────────────────────────────────────────────────────────────── */
+
 @media print {
-  body { background: white !important; color: black !important; }
-  aside, body > div > div > header { display: none !important; }
+  body { background: oklch(100% 0 0) !important; color: oklch(0% 0 0) !important; }
+  .glass, .glass-strong, .glass-thin, .glass-tooltip { background: oklch(100% 0 0) !important; box-shadow: none !important; backdrop-filter: none !important; }
+  aside, nav[aria-label="Navegação principal"], body > div > div > header { display: none !important; }
   main { max-width: none !important; padding: 0 !important; }
 }

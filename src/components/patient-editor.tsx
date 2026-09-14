@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/toast";
+import { useT } from "@/i18n/client";
 
 type Patient = {
   id: string;
@@ -42,6 +43,7 @@ export function EditPatientButton({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -71,26 +73,26 @@ export function EditPatientButton({
 
   async function submit() {
     setError(null);
-    if (!values.name.trim()) return setError("Indique o nome do paciente.");
+    if (!values.name.trim()) return setError(t("patients.editor.nameRequired"));
     setSaving(true);
     const res = await action(patient.id, values);
     setSaving(false);
     if ("error" in res) return setError(res.error);
-    toast("Paciente atualizado com sucesso");
+    toast(t("patients.editor.updated"));
     router.refresh();
     setOpen(false);
   }
 
   async function remove() {
     if (!deleteAction) return;
-    const confirmed = window.confirm(`Tem a certeza que pretende apagar o paciente ${patient.name}?`);
+    const confirmed = window.confirm(t("patients.editor.confirmDelete", { name: patient.name }));
     if (!confirmed) return;
 
     setSaving(true);
     const res = await deleteAction(patient.id);
     setSaving(false);
     if ("error" in res) return setError(res.error);
-    toast("Paciente apagado com sucesso");
+    toast(t("patients.editor.deleted"));
     setOpen(false);
     router.replace("/pacientes");
     router.refresh();
@@ -100,11 +102,11 @@ export function EditPatientButton({
     <>
       <div className="flex items-center gap-2">
         <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-          <Pencil className="size-3.5" /> Editar
+          <Pencil className="size-3.5" /> {t("common.edit")}
         </Button>
         {deleteAction && (
           <Button variant="danger" size="sm" onClick={remove} disabled={saving}>
-            <Trash2 className="size-3.5" /> Apagar
+            <Trash2 className="size-3.5" /> {t("common.remove")}
           </Button>
         )}
       </div>
@@ -113,53 +115,53 @@ export function EditPatientButton({
         <Modal
           open
           onClose={() => setOpen(false)}
-          title="Editar paciente"
-          description="Atualize os dados pessoais e de contacto do paciente."
+          title={t("patients.editor.title")}
+          description={t("patients.editor.description")}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button variant="ghost" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
               <Button onClick={submit} disabled={saving}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Guardar
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("common.save")}
               </Button>
             </>
           }
         >
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <Label htmlFor="name">Nome completo</Label>
+              <Label htmlFor="name">{t("patients.fields.name")}</Label>
               <Input id="name" className="mt-1.5" value={values.name} onChange={(e) => setValues((v) => ({ ...v, name: e.target.value }))} />
             </div>
             <div>
-              <Label htmlFor="phone">Telefone</Label>
+              <Label htmlFor="phone">{t("patients.fields.phone")}</Label>
               <Input id="phone" className="mt-1.5" value={values.phone} onChange={(e) => setValues((v) => ({ ...v, phone: e.target.value }))} />
             </div>
             <div>
-              <Label htmlFor="birthDate">Data de nascimento</Label>
+              <Label htmlFor="birthDate">{t("patients.fields.birthDate")}</Label>
               <Input id="birthDate" type="date" className="mt-1.5" value={values.birthDate} onChange={(e) => setValues((v) => ({ ...v, birthDate: e.target.value }))} />
             </div>
             <div>
-              <Label htmlFor="gender">Género</Label>
+              <Label htmlFor="gender">{t("patients.fields.gender")}</Label>
               <Select id="gender" className="mt-1.5" value={values.gender} onChange={(e) => setValues((v) => ({ ...v, gender: e.target.value }))}>
-                <option value="">Selecionar…</option>
-                <option value="FEMININO">Feminino</option>
-                <option value="MASCULINO">Masculino</option>
-                <option value="OUTRO">Outro</option>
+                <option value="">{t("common.selectPlaceholder")}</option>
+                <option value="FEMININO">{t("patients.gender.FEMININO")}</option>
+                <option value="MASCULINO">{t("patients.gender.MASCULINO")}</option>
+                <option value="OUTRO">{t("patients.gender.OUTRO")}</option>
               </Select>
             </div>
             <div>
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t("patients.fields.email")}</Label>
               <Input id="email" type="email" className="mt-1.5" value={values.email} onChange={(e) => setValues((v) => ({ ...v, email: e.target.value }))} />
             </div>
             <div className="col-span-2">
-              <Label htmlFor="address">Morada</Label>
+              <Label htmlFor="address">{t("patients.fields.address")}</Label>
               <Input id="address" className="mt-1.5" value={values.address} onChange={(e) => setValues((v) => ({ ...v, address: e.target.value }))} />
             </div>
             <div>
-              <Label htmlFor="emergencyContactName">Contacto de emergência</Label>
+              <Label htmlFor="emergencyContactName">{t("patients.fields.emergencyContact")}</Label>
               <Input id="emergencyContactName" className="mt-1.5" value={values.emergencyContactName} onChange={(e) => setValues((v) => ({ ...v, emergencyContactName: e.target.value }))} />
             </div>
             <div>
-              <Label htmlFor="emergencyContactPhone">Tel. de emergência</Label>
+              <Label htmlFor="emergencyContactPhone">{t("patients.fields.emergencyPhone")}</Label>
               <Input id="emergencyContactPhone" className="mt-1.5" value={values.emergencyContactPhone} onChange={(e) => setValues((v) => ({ ...v, emergencyContactPhone: e.target.value }))} />
             </div>
           </div>

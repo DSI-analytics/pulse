@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { dayRange, formatTime, clinicTodayIso, formatWeekdayDatePt } from "@/lib/datetime";
+import { dayRange, clinicTodayIso } from "@/lib/datetime";
 import { PageHeader } from "@/components/page-header";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -12,10 +12,10 @@ import { StatusPill } from "@/components/status-pill";
 import { AgendaActions } from "@/components/agenda-actions";
 import { NovaMarcacao } from "@/components/nova-marcacao";
 import { EmptyState } from "@/components/ui/empty-state";
-import { TYPE_LABEL, STATUS_LABEL, isOverdue } from "@/lib/appointment-status";
-import { formatMZN } from "@/lib/money";
+import { isOverdue } from "@/lib/appointment-status";
 import { can } from "@/lib/rbac";
 import { ListFilters } from "@/components/list-filters";
+import { getFormatters, getTranslator } from "@/i18n/server";
 import type { AppointmentStatus } from "@prisma/client";
 
 const APPOINTMENT_STATUSES: AppointmentStatus[] = ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA", "EM_CONSULTA", "CONCLUIDA", "CANCELADA", "NAO_COMPARECEU"];
@@ -26,12 +26,19 @@ function addDays(iso: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("agenda.title") };
+}
+
 export default async function AgendaPage({
   searchParams,
 }: {
   searchParams: Promise<{ d?: string; q?: string; estado?: string; medico?: string; especialidade?: string }>;
 }) {
   const user = await requirePermission("appointment.view");
+  const t = await getTranslator();
+  const f = await getFormatters();
   const sp = await searchParams;
   const todayIso = clinicTodayIso();
   const dateIso = sp.d ?? todayIso;
@@ -76,9 +83,9 @@ export default async function AgendaPage({
 
   // "Hoje" / "Amanhã" / "Ontem" — relative to the day actually being viewed.
   const relativeLabel =
-    dateIso === todayIso ? "Hoje"
-      : dateIso === addDays(todayIso, 1) ? "Amanhã"
-        : dateIso === addDays(todayIso, -1) ? "Ontem"
+    dateIso === todayIso ? t("agenda.relative.today")
+      : dateIso === addDays(todayIso, 1) ? t("agenda.relative.tomorrow")
+        : dateIso === addDays(todayIso, -1) ? t("agenda.relative.yesterday")
           : null;
 
   const counts = {
@@ -89,12 +96,14 @@ export default async function AgendaPage({
     faltas: appts.filter((a) => a.status === "NAO_COMPARECEU").length,
   };
 
+  const viewedDay = f.dateLong(new Date(dateIso + "T12:00:00Z"));
+
   return (
     <>
       <PageHeader
-        eyebrow="Operação"
-        title={isDoctor ? "Minha agenda" : "Agenda"}
-        description={formatWeekdayDatePt(new Date(dateIso + "T12:00:00Z"))}
+        eyebrow={t("nav.groups.operation")}
+        title={isDoctor ? t("agenda.myTitle") : t("agenda.title")}
+        description={viewedDay}
         actions={can(user.role, "appointment.manage") ? <NovaMarcacao /> : undefined}
       />
 
@@ -103,21 +112,21 @@ export default async function AgendaPage({
           <Link
             href={agendaHref(addDays(dateIso, -1))}
             className={buttonVariants({ variant: "secondary", size: "icon" })}
-            aria-label="Dia anterior"
+            aria-label={t("agenda.previousDay")}
           >
             <ChevronLeft className="size-4" />
           </Link>
 
           {/* The label always names the day actually being viewed. */}
           <div className="flex min-w-[13rem] items-center justify-center gap-2 rounded-md border border-border bg-surface px-3 py-1.5">
-            <span className="text-sm font-semibold">{formatWeekdayDatePt(new Date(dateIso + "T12:00:00Z"))}</span>
+            <span className="text-sm font-semibold">{viewedDay}</span>
             {relativeLabel && <Badge variant="default">{relativeLabel}</Badge>}
           </div>
 
           <Link
             href={agendaHref(addDays(dateIso, 1))}
             className={buttonVariants({ variant: "secondary", size: "icon" })}
-            aria-label="Dia seguinte"
+            aria-label={t("agenda.nextDay")}
           >
             <ChevronRight className="size-4" />
           </Link>
@@ -125,16 +134,16 @@ export default async function AgendaPage({
           {/* Only offered when you are not already on today. */}
           {dateIso !== todayIso && (
             <Link href="/agenda" className={buttonVariants({ variant: "ghost", size: "sm" })}>
-              Ir para hoje
+              {t("agenda.goToday")}
             </Link>
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          <Chip label="Marcações" value={counts.total} />
-          <Chip label="Em fila / consulta" value={counts.espera} tone="warning" />
-          <Chip label="Em atraso" value={counts.atraso} tone="danger" />
-          <Chip label="Concluídas" value={counts.concluidas} tone="success" />
-          <Chip label="Faltas" value={counts.faltas} tone="danger" />
+          <Chip label={t("agenda.chips.appointments")} value={counts.total} />
+          <Chip label={t("agenda.chips.queue")} value={counts.espera} tone="warning" />
+          <Chip label={t("agenda.chips.overdue")} value={counts.atraso} tone="danger" />
+          <Chip label={t("agenda.chips.completed")} value={counts.concluidas} tone="success" />
+          <Chip label={t("agenda.chips.noShows")} value={counts.faltas} tone="danger" />
         </div>
       </div>
 
@@ -143,10 +152,10 @@ export default async function AgendaPage({
         clearHref={`/agenda?d=${dateIso}`}
         hidden={{ d: dateIso }}
         fields={[
-          { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome do paciente…" },
-          { name: "estado", label: "Estado", value: status, options: APPOINTMENT_STATUSES.map((value) => ({ value, label: STATUS_LABEL[value] })) },
-          ...(!isDoctor ? [{ name: "medico", label: "Médico", value: sp.medico, options: doctors.map((doctor) => ({ value: doctor.id, label: doctor.name })) }] : []),
-          { name: "especialidade", label: "Especialidade", value: sp.especialidade, options: specialties.map((specialty) => ({ value: specialty.id, label: specialty.name })) },
+          { name: "q", label: t("agenda.filters.search"), value: query, type: "search", placeholder: t("agenda.filters.searchPlaceholder") },
+          { name: "estado", label: t("agenda.filters.status"), value: status, options: APPOINTMENT_STATUSES.map((value) => ({ value, label: t(`appointmentStatus.${value}`) })) },
+          ...(!isDoctor ? [{ name: "medico", label: t("agenda.filters.doctor"), value: sp.medico, options: doctors.map((doctor) => ({ value: doctor.id, label: doctor.name })) }] : []),
+          { name: "especialidade", label: t("agenda.filters.specialty"), value: sp.especialidade, options: specialties.map((specialty) => ({ value: specialty.id, label: specialty.name })) },
         ]}
       />
 
@@ -155,13 +164,13 @@ export default async function AgendaPage({
           <div className="p-6">
             <EmptyState
               icon={CalendarDays}
-              title={isDoctor && !user.doctorId ? "Conta sem médico associado" : "Sem marcações neste dia"}
+              title={isDoctor && !user.doctorId ? t("agenda.empty.noDoctorTitle") : t("agenda.empty.title")}
               description={
                 isDoctor && !user.doctorId
-                  ? "Peça a um administrador para associar esta conta ao respetivo médico nas Configurações."
+                  ? t("agenda.empty.noDoctorBody")
                   : isDoctor
-                    ? "Não existem marcações na sua agenda para este dia."
-                    : "Crie uma nova marcação ou navegue para outro dia."
+                    ? t("agenda.empty.doctorBody")
+                    : t("agenda.empty.body")
               }
             />
           </div>
@@ -169,21 +178,21 @@ export default async function AgendaPage({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Hora</TableHead>
-                <TableHead>Paciente</TableHead>
-                <TableHead>Médico</TableHead>
-                <TableHead>Especialidade</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead>Cobertura</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <TableHead>{t("agenda.columns.time")}</TableHead>
+                <TableHead>{t("agenda.columns.patient")}</TableHead>
+                <TableHead>{t("agenda.columns.doctor")}</TableHead>
+                <TableHead>{t("agenda.columns.specialty")}</TableHead>
+                <TableHead>{t("agenda.columns.type")}</TableHead>
+                <TableHead>{t("agenda.columns.coverage")}</TableHead>
+                <TableHead className="text-right">{t("agenda.columns.amount")}</TableHead>
+                <TableHead>{t("agenda.columns.status")}</TableHead>
+                <TableHead className="text-right">{t("agenda.columns.actions")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {appts.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-mono text-[13px] font-medium">{formatTime(a.startAt)}</TableCell>
+                  <TableCell className="font-mono text-[13px] font-medium">{f.time(a.startAt)}</TableCell>
                   <TableCell className="font-medium">{a.patient.name}</TableCell>
                   <TableCell className="text-muted-foreground">{a.doctor.name}</TableCell>
                   <TableCell>
@@ -193,17 +202,17 @@ export default async function AgendaPage({
                     </span>
                   </TableCell>
                   <TableCell className="text-[13px] text-muted-foreground">
-                    {TYPE_LABEL[a.type]}
+                    {t(`agenda.types.${a.type}`)}
                     {a.service && <span className="block text-[12px] text-subtle-foreground">{a.service.name}</span>}
                   </TableCell>
                   <TableCell>
                     {a.healthPlan ? (
                       <Badge variant="info">{a.healthPlan.insuranceCompany.name}</Badge>
                     ) : (
-                      <Badge variant="neutral">Particular</Badge>
+                      <Badge variant="neutral">{t("agenda.private")}</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right text-[13px] tabular">{formatMZN(a.priceQuoted)}</TableCell>
+                  <TableCell className="text-right text-[13px] tabular">{f.money(a.priceQuoted)}</TableCell>
                   <TableCell><StatusPill status={a.status} startAt={a.startAt} /></TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end">

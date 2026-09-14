@@ -11,6 +11,12 @@
 // Para verificação farmacológica real, o adaptador de integração deve ligar-se
 // a uma base validada (ver src/lib/integrations).
 
+import pt from "../../i18n/messages/pt";
+import { createTranslator, type Translator } from "../../i18n/translate";
+
+/** Tradutor por omissão (português), para chamadores sem contexto de idioma. */
+const defaultT: Translator = createTranslator(pt);
+
 /** minúsculas, sem acentos, sem pontuação e sem espaços redundantes. */
 export function normaliseSubstance(value: string): string {
   return value
@@ -63,11 +69,13 @@ function match(allergyKey: string, candidate: string): "exacta" | "parcial" | nu
 /**
  * Devolve os avisos que devem ser mostrados ao prescritor antes de emitir.
  * Só considera alergias com estado activo (filtragem é da responsabilidade do
- * chamador, que consulta apenas `status: "ACTIVA"`).
+ * chamador, que consulta apenas `status: "ACTIVA"`). A `message` vem no idioma
+ * de `t` (português por omissão).
  */
 export function checkAllergyConflicts(
   medication: MedicationCandidate,
   allergies: AllergyRecord[],
+  t: Translator = defaultT,
 ): AllergyWarning[] {
   const warnings: AllergyWarning[] = [];
   for (const allergy of allergies) {
@@ -86,11 +94,14 @@ export function checkAllergyConflicts(
       kind: allergy.kind,
       matchedOn,
       confidence,
-      message:
-        `${allergy.kind === "ALERGIA" ? "Alergia" : "Intolerância"} registada a “${allergy.substance}”` +
-        ` (${allergy.severity.toLowerCase()})` +
-        `${allergy.reaction ? ` — reacção: ${allergy.reaction}` : ""}.` +
-        ` Correspondência ${confidence} pelo ${matchedOn === "principio_activo" ? "princípio activo" : "nome do medicamento"}.`,
+      message: t("clinical.allergyCheck.message", {
+        kind: t(`clinical.allergyKind.${allergy.kind}`),
+        substance: allergy.substance,
+        severity: t(`clinical.enums.${allergy.severity}`),
+        reaction: allergy.reaction ? t("clinical.allergyCheck.reaction", { reaction: allergy.reaction }) : "",
+        confidence: t(`clinical.allergyCheck.confidence.${confidence}`),
+        field: t(`clinical.allergyCheck.field.${matchedOn}`),
+      }),
     });
   }
 

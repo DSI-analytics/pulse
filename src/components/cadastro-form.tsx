@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast";
+import { useT } from "@/i18n/client";
 
 export interface Field {
   name: string;
@@ -42,6 +43,7 @@ export function CadastroButton({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -58,14 +60,14 @@ export function CadastroButton({
     setError(null);
     for (const f of fields) {
       if (f.required && !values[f.name]?.trim()) {
-        return setError(`Preencha o campo “${f.label}”.`);
+        return setError(t("common.requiredField", { field: f.label }));
       }
     }
     setSaving(true);
     const res = await action(values);
     setSaving(false);
     if ("error" in res) return setError(res.error);
-    toast(`${title} — guardado com sucesso`);
+    toast(t("common.savedWithTitle", { title }));
     router.refresh();
     setOpen(false);
     reset();
@@ -84,9 +86,9 @@ export function CadastroButton({
           description={description}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
+              <Button variant="ghost" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
               <Button onClick={submit} disabled={saving}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Guardar
+                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("common.save")}
               </Button>
             </>
           }
@@ -106,7 +108,7 @@ export function CadastroButton({
                     value={values[f.name]}
                     onChange={(e) => setValues((v) => ({ ...v, [f.name]: e.target.value }))}
                   >
-                    <option value="">Selecionar…</option>
+                    <option value="">{t("common.selectPlaceholder")}</option>
                     {f.options?.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}

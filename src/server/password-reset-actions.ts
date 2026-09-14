@@ -12,19 +12,23 @@ import {
   RESET_CODE_RESEND_SECONDS,
   RESET_CODE_TTL_MINUTES,
 } from "@/lib/password-reset";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
 export type RequestResetState = { status?: "sent"; email?: string; error?: string } | null;
 export type ConfirmResetState = { status?: "reset"; error?: string } | null;
 
-const requestSchema = z.object({ email: z.string().trim().toLowerCase().email("Introduza um email válido.") });
-const confirmSchema = z.object({
-  email: z.string().trim().toLowerCase().email(),
-  code: z.string().trim().regex(/^\d{6}$/, "O código deve ter 6 dígitos."),
-  password: z.string().min(8, "A palavra-passe deve ter pelo menos 8 caracteres.").max(72),
-  passwordConfirmation: z.string(),
-}).refine((values) => values.password === values.passwordConfirmation, {
-  message: "As palavras-passe não coincidem.", path: ["passwordConfirmation"],
-});
+const requestSchema = (t: Translator) =>
+  z.object({ email: z.string().trim().toLowerCase().email(t("auth.errors.enterValidEmail")) });
+const confirmSchema = (t: Translator) =>
+  z.object({
+    email: z.string().trim().toLowerCase().email(),
+    code: z.string().trim().regex(/^\d{6}$/, t("auth.errors.codeFormat")),
+    password: z.string().min(8, t("auth.errors.passwordLength")).max(72),
+    passwordConfirmation: z.string(),
+  }).refine((values) => values.password === values.passwordConfirmation, {
+    message: t("auth.errors.passwordMismatch"), path: ["passwordConfirmation"],
+  });
 
 function resetSecret() {
   const value = process.env.AUTH_SECRET;
@@ -33,7 +37,8 @@ function resetSecret() {
 }
 
 export async function requestPasswordReset(_previous: RequestResetState, formData: FormData): Promise<RequestResetState> {
-  const parsed = requestSchema.safeParse({ email: formData.get("email") });
+  const t = await getTranslator();
+  const parsed = requestSchema(t).safeParse({ email: formData.get("email") });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const email = parsed.data.email;
@@ -74,7 +79,7 @@ export async function requestPasswordReset(_previous: RequestResetState, formDat
   } catch (error) {
     await prisma.passwordResetCode.delete({ where: { id: reset.id } }).catch(() => undefined);
     console.error("Falha ao enviar código de recuperação:", error instanceof Error ? error.message : "erro desconhecido");
-    return { error: "Não foi possível enviar o email. Tente novamente dentro de alguns minutos." };
+    return { error: t("auth.errors.sendFailed") };
   }
 
   await audit({
@@ -88,7 +93,8 @@ export async function requestPasswordReset(_previous: RequestResetState, formDat
 }
 
 export async function confirmPasswordReset(_previous: ConfirmResetState, formData: FormData): Promise<ConfirmResetState> {
-  const parsed = confirmSchema.safeParse({
+  const t = await getTranslator();
+  const parsed = confirmSchema(t).safeParse({
     email: formData.get("email"),
     code: formData.get("code"),
     password: formData.get("password"),
@@ -101,20 +107,20 @@ export async function confirmPasswordReset(_previous: ConfirmResetState, formDat
     orderBy: { createdAt: "asc" },
     select: { id: true, clinicId: true },
   });
-  if (!user) return { error: "Código inválido ou expirado." };
+  if (!user) return { error: t("auth.errors.codeInvalidOrExpired") };
 
   const reset = await prisma.passwordResetCode.findFirst({
     where: { userId: user.id, consumedAt: null },
     orderBy: { createdAt: "desc" },
   });
   if (!reset || reset.expiresAt <= new Date() || reset.attempts >= RESET_CODE_MAX_ATTEMPTS) {
-    return { error: "Código inválido ou expirado. Peça um novo código." };
+    return { error: t("auth.errors.codeInvalidOrExpiredRetry") };
   }
 
   if (!resetCodesMatch(parsed.data.code, reset.codeHash, user.id, resetSecret())) {
     await prisma.passwordResetCode.update({ where: { id: reset.id }, data: { attempts: { increment: 1 } } });
     const remaining = Math.max(0, RESET_CODE_MAX_ATTEMPTS - reset.attempts - 1);
-    return { error: remaining ? `Código inválido. Restam ${remaining} tentativas.` : "Código bloqueado. Peça um novo código." };
+    return { error: remaining ? t("auth.errors.codeInvalidRemaining", { remaining }) : t("auth.errors.codeBlocked") };
   }
 
   const consumedAt = new Date();
@@ -134,7 +140,7 @@ export async function confirmPasswordReset(_previous: ConfirmResetState, formDat
     });
     return true;
   });
-  if (!result) return { error: "Código inválido ou expirado. Peça um novo código." };
+  if (!result) return { error: t("auth.errors.codeInvalidOrExpiredRetry") };
 
   await audit({
     clinicId: user.clinicId,

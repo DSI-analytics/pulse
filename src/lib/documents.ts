@@ -2,6 +2,7 @@ import "server-only";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile, unlink } from "node:fs/promises";
 import path from "node:path";
+import { getTranslator } from "@/i18n/server";
 
 /**
  * Armazenamento de documentos clínicos.
@@ -110,19 +111,20 @@ export async function storeUpload(
   clinicId: string,
   file: File,
 ): Promise<StoredFile | UploadValidationError> {
-  if (!file || typeof file.arrayBuffer !== "function") return { error: "Ficheiro em falta." };
-  if (file.size <= 0) return { error: "Ficheiro vazio." };
+  const t = await getTranslator();
+  if (!file || typeof file.arrayBuffer !== "function") return { error: t("clinical.documents.fileMissing") };
+  if (file.size <= 0) return { error: t("clinical.documents.fileEmpty") };
   if (file.size > MAX_UPLOAD_BYTES) {
-    return { error: `Ficheiro demasiado grande (máx. ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB).` };
+    return { error: t("clinical.documents.fileTooLargeMax", { max: Math.round(MAX_UPLOAD_BYTES / 1024 / 1024) }) };
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (bytes.byteLength > MAX_UPLOAD_BYTES) return { error: "Ficheiro demasiado grande." };
+  if (bytes.byteLength > MAX_UPLOAD_BYTES) return { error: t("clinical.documents.fileTooLarge") };
 
   const detected = sniffMime(bytes);
   if (!detected) {
     return {
-      error: `Tipo de ficheiro não permitido. Aceites: ${ALLOWED_TYPES.map((t) => t.label).join(", ")}.`,
+      error: t("clinical.documents.typeNotAllowed", { types: ALLOWED_TYPES.map((type) => type.label).join(", ") }),
     };
   }
 

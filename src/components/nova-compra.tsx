@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast";
 import { getInventoryContext, createPurchase, type InventoryContext } from "@/server/inventory-actions";
-import { formatMZN, parseMZN } from "@/lib/money";
+import { parseMoneyInput } from "@/lib/format";
+import { useFormat, useT } from "@/i18n/client";
 
 interface Line {
   itemId: string;
@@ -20,11 +21,12 @@ interface Line {
 const emptyLine = (): Line => ({ itemId: "", quantity: "1", unitCost: "" });
 
 export function NovaCompra() {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   return (
     <>
       <Button size="sm" onClick={() => setOpen(true)}>
-        <PackagePlus className="size-4" /> Registar compra
+        <PackagePlus className="size-4" /> {t("suppliers.newPurchase.button")}
       </Button>
       {open && <NovaCompraDialog onClose={() => setOpen(false)} />}
     </>
@@ -34,6 +36,8 @@ export function NovaCompra() {
 function NovaCompraDialog({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
+  const f = useFormat();
   const [ctx, setCtx] = React.useState<InventoryContext | null>(null);
   const [supplierId, setSupplierId] = React.useState("");
   const [invoiceNumber, setInvoiceNumber] = React.useState("");
@@ -53,28 +57,30 @@ function NovaCompraDialog({ onClose }: { onClose: () => void }) {
   }
 
   const total = lines.reduce(
-    (sum, l) => sum + (Number.parseInt(l.quantity || "0", 10) || 0) * parseMZN(l.unitCost || "0"),
+    (sum, l) => sum + (Number.parseInt(l.quantity || "0", 10) || 0) * (parseMoneyInput(l.unitCost || "0") ?? 0),
     0,
   );
 
   async function submit() {
     setError(null);
-    if (!supplierId) return setError("Selecione o fornecedor.");
-    const items = lines
-      .filter((l) => l.itemId)
-      .map((l) => ({
-        itemId: l.itemId,
-        quantity: Number.parseInt(l.quantity || "0", 10) || 0,
-        unitCost: parseMZN(l.unitCost || "0"),
-      }));
-    if (items.length === 0) return setError("Adicione pelo menos um artigo.");
-    if (items.some((i) => i.quantity <= 0)) return setError("As quantidades devem ser maiores que zero.");
+    if (!supplierId) return setError(t("suppliers.newPurchase.errors.supplierRequired"));
+    const chosen = lines.filter((l) => l.itemId);
+    if (chosen.some((l) => parseMoneyInput(l.unitCost || "0") === null)) {
+      return setError(t("suppliers.newPurchase.errors.invalidUnitCost"));
+    }
+    const items = chosen.map((l) => ({
+      itemId: l.itemId,
+      quantity: Number.parseInt(l.quantity || "0", 10) || 0,
+      unitCost: parseMoneyInput(l.unitCost || "0") ?? 0,
+    }));
+    if (items.length === 0) return setError(t("suppliers.newPurchase.errors.itemsRequired"));
+    if (items.some((i) => i.quantity <= 0)) return setError(t("suppliers.newPurchase.errors.quantitiesPositive"));
 
     setSaving(true);
     const res = await createPurchase({ supplierId, invoiceNumber, dueAt: dueAt || undefined, received, paid, items });
     setSaving(false);
     if ("error" in res && res.error) return setError(res.error);
-    toast(received ? "Compra registada e stock actualizado" : "Encomenda registada");
+    toast(received ? t("suppliers.newPurchase.toastReceived") : t("suppliers.newPurchase.toastOrdered"));
     router.refresh();
     onClose();
   }
@@ -84,13 +90,13 @@ function NovaCompraDialog({ onClose }: { onClose: () => void }) {
       open
       onClose={onClose}
       className="max-w-2xl"
-      title="Registar compra"
-      description="Ao marcar como recebida, o stock é actualizado automaticamente e a despesa é lançada."
+      title={t("suppliers.newPurchase.title")}
+      description={t("suppliers.newPurchase.description")}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button variant="ghost" onClick={onClose}>{t("common.cancel")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Guardar compra
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("suppliers.newPurchase.save")}
           </Button>
         </>
       }
@@ -98,23 +104,23 @@ function NovaCompraDialog({ onClose }: { onClose: () => void }) {
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Fornecedor <span className="text-danger">*</span></Label>
+            <Label>{t("suppliers.newPurchase.supplier")} <span className="text-danger">*</span></Label>
             <Select className="mt-1.5" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-              <option value="">Selecionar…</option>
+              <option value="">{t("suppliers.newPurchase.select")}</option>
               {ctx?.suppliers.map((s) => (
                 <option key={s.id} value={s.id}>{s.name}</option>
               ))}
             </Select>
           </div>
           <div>
-            <Label>Nº da factura</Label>
+            <Label>{t("suppliers.newPurchase.invoiceNumber")}</Label>
             <Input className="mt-1.5" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="FT-1234" />
           </div>
         </div>
 
         {/* Lines */}
         <div>
-          <Label>Artigos</Label>
+          <Label>{t("suppliers.newPurchase.items")}</Label>
           <div className="mt-1.5 space-y-2">
             {lines.map((l, i) => {
               const item = ctx?.items.find((x) => x.id === l.itemId);
@@ -127,7 +133,7 @@ function NovaCompraDialog({ onClose }: { onClose: () => void }) {
                       unitCost: l.unitCost || (chosen ? String(chosen.lastCost / 100) : ""),
                     });
                   }}>
-                    <option value="">Selecionar artigo…</option>
+                    <option value="">{t("suppliers.newPurchase.selectItem")}</option>
                     {ctx?.items.map((it) => (
                       <option key={it.id} value={it.id}>{it.name} ({it.sku})</option>
                     ))}
@@ -136,20 +142,20 @@ function NovaCompraDialog({ onClose }: { onClose: () => void }) {
                     inputMode="numeric"
                     value={l.quantity}
                     onChange={(e) => updateLine(i, { quantity: e.target.value })}
-                    placeholder="Qtd"
-                    title={item ? `Stock atual: ${item.currentStock} ${item.unit}` : "Quantidade"}
+                    placeholder={t("suppliers.newPurchase.quantityPlaceholder")}
+                    title={item ? t("suppliers.newPurchase.currentStock", { stock: item.currentStock, unit: item.unit }) : t("suppliers.newPurchase.quantity")}
                   />
                   <Input
                     inputMode="decimal"
                     value={l.unitCost}
                     onChange={(e) => updateLine(i, { unitCost: e.target.value })}
-                    placeholder="Custo un."
+                    placeholder={t("suppliers.newPurchase.unitCostPlaceholder")}
                   />
                   <button
                     type="button"
                     onClick={() => setLines((ls) => (ls.length === 1 ? [emptyLine()] : ls.filter((_, idx) => idx !== i)))}
                     className="rounded-md p-2 text-muted-foreground hover:bg-surface-2 hover:text-danger"
-                    aria-label="Remover artigo"
+                    aria-label={t("suppliers.newPurchase.removeItem")}
                   >
                     <Trash2 className="size-4" />
                   </button>
@@ -158,30 +164,30 @@ function NovaCompraDialog({ onClose }: { onClose: () => void }) {
             })}
           </div>
           <Button variant="ghost" size="sm" className="mt-2" onClick={() => setLines((ls) => [...ls, emptyLine()])}>
-            <Plus className="size-4" /> Adicionar artigo
+            <Plus className="size-4" /> {t("suppliers.newPurchase.addItem")}
           </Button>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Vencimento</Label>
+            <Label>{t("suppliers.newPurchase.dueDate")}</Label>
             <Input type="date" className="mt-1.5" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
           </div>
           <div className="flex items-end gap-4 pb-1.5">
             <label className="flex items-center gap-2 text-[13px] font-medium">
               <input type="checkbox" checked={received} onChange={(e) => setReceived(e.target.checked)} className="size-4 accent-[var(--primary)]" />
-              Recebida (entra no stock)
+              {t("suppliers.newPurchase.received")}
             </label>
             <label className="flex items-center gap-2 text-[13px] font-medium">
               <input type="checkbox" checked={paid} onChange={(e) => setPaid(e.target.checked)} className="size-4 accent-[var(--primary)]" />
-              Paga
+              {t("suppliers.newPurchase.paid")}
             </label>
           </div>
         </div>
 
         <div className="flex items-center justify-between rounded-md bg-surface-2 px-3 py-2">
-          <span className="text-sm text-muted-foreground">Total da compra</span>
-          <span className="font-display text-lg font-semibold tabular">{formatMZN(total)}</span>
+          <span className="text-sm text-muted-foreground">{t("suppliers.newPurchase.total")}</span>
+          <span className="font-display text-lg font-semibold tabular">{f.money(total)}</span>
         </div>
 
         {error && <p className="rounded-md bg-danger-muted px-3 py-2 text-[13px] font-medium text-danger">{error}</p>}

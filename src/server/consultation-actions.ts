@@ -8,7 +8,10 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
 import { splitInvoice } from "@/lib/domain/billing";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
+// Stored as invoice/revenue descriptions (database data), so kept in Portuguese.
 const APPOINTMENT_TYPE_LABEL = {
   CONSULTA: "Consulta médica",
   RETORNO: "Consulta de retorno",
@@ -16,17 +19,19 @@ const APPOINTMENT_TYPE_LABEL = {
   PROCEDIMENTO: "Procedimento",
 } as const;
 
-const text = z.string().trim().max(10000, "O texto não pode exceder 10.000 caracteres.");
-const consultationSchema = z.object({
-  subjective: text,
-  notes: text,
-  diagnosis: text,
-  prescription: text,
-  recommendations: text,
-  followUpDate: z.string().trim().regex(/^(|\d{4}-\d{2}-\d{2})$/, "Data de retorno inválida."),
-});
+function consultationSchema(t: Translator) {
+  const text = z.string().trim().max(10000, t("consultations.errors.textTooLong"));
+  return z.object({
+    subjective: text,
+    notes: text,
+    diagnosis: text,
+    prescription: text,
+    recommendations: text,
+    followUpDate: z.string().trim().regex(/^(|\d{4}-\d{2}-\d{2})$/, t("consultations.errors.invalidFollowUp")),
+  });
+}
 
-export type ConsultationValues = z.input<typeof consultationSchema>;
+export type ConsultationValues = z.input<ReturnType<typeof consultationSchema>>;
 export type ConsultationActionResult = { ok: true } | { error: string };
 export type ConsultationEditorResult = {
   ok: true;
@@ -40,9 +45,9 @@ function nullable(value: string) {
   return value || null;
 }
 
-async function clinicalAccess(appointmentId: string) {
+async function clinicalAccess(appointmentId: string, t: Translator) {
   const user = await requireUser();
-  if (!can(user.role, "consultation.conduct")) return { ok: false, error: "Sem permissão para registar consultas clínicas." } as const;
+  if (!can(user.role, "consultation.conduct")) return { ok: false, error: t("consultations.errors.noPermission") } as const;
   const appointment = await prisma.appointment.findFirst({
     where: { id: appointmentId, clinicId: user.clinicId },
     select: {
@@ -56,21 +61,22 @@ async function clinicalAccess(appointmentId: string) {
       revenue: { select: { id: true } },
     },
   });
-  if (!appointment) return { ok: false, error: "Consulta não encontrada." } as const;
+  if (!appointment) return { ok: false, error: t("consultations.errors.notFound") } as const;
   if (user.role === "DOCTOR" && (!user.doctorId || appointment.doctorId !== user.doctorId)) {
-    return { ok: false, error: "Só pode editar consultas da sua própria agenda." } as const;
+    return { ok: false, error: t("consultations.errors.ownAgendaOnly") } as const;
   }
   if (["CANCELADA", "NAO_COMPARECEU"].includes(appointment.status)) {
-    return { ok: false, error: "Não é possível editar uma consulta cancelada ou marcada como falta." } as const;
+    return { ok: false, error: t("consultations.errors.cancelled") } as const;
   }
   if (!["EM_CONSULTA", "CONCLUIDA"].includes(appointment.status)) {
-    return { ok: false, error: "Inicie a consulta antes de abrir o registo clínico." } as const;
+    return { ok: false, error: t("consultations.errors.startFirst") } as const;
   }
   return { ok: true, user, appointment } as const;
 }
 
 export async function getConsultationEditor(appointmentId: string): Promise<ConsultationEditorResult> {
-  const access = await clinicalAccess(appointmentId);
+  const t = await getTranslator();
+  const access = await clinicalAccess(appointmentId, t);
   if (!access.ok) return { error: access.error };
   const consultation = await prisma.consultation.findUnique({
     where: { appointmentId: access.appointment.id },
@@ -97,13 +103,14 @@ export async function saveConsultation(
   values: ConsultationValues,
   complete: boolean,
 ): Promise<ConsultationActionResult> {
-  const access = await clinicalAccess(appointmentId);
+  const t = await getTranslator();
+  const access = await clinicalAccess(appointmentId, t);
   if (!access.ok) return { error: access.error };
-  const parsed = consultationSchema.safeParse(values);
+  const parsed = consultationSchema(t).safeParse(values);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   if (complete && access.appointment.status === "CONCLUIDA") complete = false;
   if (complete && access.appointment.status !== "EM_CONSULTA") {
-    return { error: "Inicie a consulta antes de a concluir." };
+    return { error: t("consultations.errors.startBeforeComplete") };
   }
 
   const followUpDate = parsed.data.followUpDate ? new Date(`${parsed.data.followUpDate}T00:00:00.000Z`) : null;

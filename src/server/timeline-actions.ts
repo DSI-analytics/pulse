@@ -4,6 +4,7 @@ import { audit } from "@/lib/audit";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
+import { getTranslator } from "@/i18n/server";
 import {
   getPatientTimeline,
   TIMELINE_TYPES,
@@ -31,13 +32,14 @@ export type TimelineResult = ({ ok: true } & TimelinePage) | { error: string };
  */
 export async function loadPatientTimeline(query: TimelineQuery): Promise<TimelineResult> {
   const user = await requireUser();
-  if (!can(user.role, "consultation.viewClinical")) return { error: "Sem permissão para ver o prontuário." };
+  const t = await getTranslator();
+  if (!can(user.role, "consultation.viewClinical")) return { error: t("clinical.errors.timelineNoPermission") };
 
   const patient = await prisma.patient.findFirst({
     where: { id: query.patientId, clinicId: user.clinicId },
     select: { id: true },
   });
-  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient) return { error: t("clinical.errors.patientNotFound") };
 
   const types = (query.types ?? []).filter((t): t is TimelineEventType =>
     (TIMELINE_TYPES as readonly string[]).includes(t),

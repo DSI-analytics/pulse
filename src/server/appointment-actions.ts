@@ -4,10 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
+import { getTranslator } from "@/i18n/server";
 import type { AppointmentStatus } from "@prisma/client";
 
 export async function setAppointmentStatus(id: string, status: AppointmentStatus, cancelReason?: string) {
   const user = await requireUser();
+  const t = await getTranslator();
 
   const appt = await prisma.appointment.findFirst({
     where: { id, clinicId: user.clinicId },
@@ -18,19 +20,19 @@ export async function setAppointmentStatus(id: string, status: AppointmentStatus
       patientId: true,
     },
   });
-  if (!appt) return { error: "Marcação não encontrada." };
+  if (!appt) return { error: t("agenda.statusErrors.notFound") };
   if (user.role === "DOCTOR" && (!user.doctorId || appt.doctorId !== user.doctorId)) {
-    return { error: "Só pode gerir marcações da sua própria agenda." };
+    return { error: t("agenda.statusErrors.ownAgendaOnly") };
   }
   // Permission: operational transitions and clinical transitions are separate.
   if (status === "CHEGOU") {
     if (!can(user.role, "appointment.checkin") && !can(user.role, "appointment.manage"))
-      return { error: "Sem permissão." };
+      return { error: t("agenda.statusErrors.noPermission") };
   } else if (status === "EM_CONSULTA" || status === "CONCLUIDA") {
-    if (!can(user.role, "consultation.conduct")) return { error: "Sem permissão clínica." };
-    if (status === "CONCLUIDA") return { error: "Conclua a consulta através do editor clínico." };
+    if (!can(user.role, "consultation.conduct")) return { error: t("agenda.statusErrors.noClinicalPermission") };
+    if (status === "CONCLUIDA") return { error: t("agenda.statusErrors.completeViaEditor") };
   } else if (!can(user.role, "appointment.manage")) {
-    return { error: "Sem permissão." };
+    return { error: t("agenda.statusErrors.noPermission") };
   }
 
   await prisma.$transaction(async (tx) => {

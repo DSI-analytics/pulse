@@ -13,12 +13,18 @@ import { KpiCard } from "@/components/kpi-card";
 import { CapacityHeatmap } from "@/components/capacity-heatmap";
 import { TrendChart } from "@/components/charts/trend-chart";
 import { RecordCrudButton } from "@/components/record-crud-button";
-import { formatMZN } from "@/lib/money";
+import { getFormatters, getTranslator } from "@/i18n/server";
 
-const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("doctors.title") };
+}
 
 export default async function DoctorDetail({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePermission("doctor.view");
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
   const canViewFinancials = can(user.role, "finance.view");
   const { id } = await params;
   const [data, doctor, specialties] = await Promise.all([
@@ -40,7 +46,7 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
   return (
     <>
       <Link href="/medicos" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="size-4" /> Médicos
+        <ArrowLeft className="size-4" /> {t("doctors.title")}
       </Link>
 
       <div className="flex flex-wrap items-center gap-4">
@@ -49,25 +55,25 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
           <h1 className="font-display text-2xl font-semibold">{doctorData.name}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <Badge variant="default">{doctorData.specialty}</Badge>
-            <span>Consulta {formatMZN(doctorData.price)}</span>
+            <span>{t("doctors.detail.consultationPrice", { price: f.money(doctorData.price) })}</span>
             <span>·</span>
-            <span>{doctorData.duration} min</span>
-            <Badge variant={doctorData.status === "ACTIVO" ? "success" : "neutral"}>{doctorData.status === "ACTIVO" ? "Activo" : "Inactivo"}</Badge>
+            <span>{t("doctors.detail.durationMinutes", { minutes: doctorData.duration })}</span>
+            <Badge variant={doctorData.status === "ACTIVO" ? "success" : "neutral"}>{doctorData.status === "ACTIVO" ? t("common.active") : t("common.inactive")}</Badge>
           </div>
         </div>
         {canManage && doctor && (
           <RecordCrudButton
             id={id}
-            title="Editar médico"
-            description="Atualize os dados do médico."
+            title={t("doctors.detail.editTitle")}
+            description={t("doctors.detail.editDescription")}
             fields={[
-              { name: "name", label: "Nome", required: true, defaultValue: doctor.name },
-              { name: "specialtyId", label: "Especialidade", type: "select", required: true, defaultValue: doctor.specialtyId ?? "", options: specialties.map((s) => ({ value: s.id, label: s.name })) },
-              { name: "consultationPrice", label: "Preço da consulta", type: "money", required: true, defaultValue: String(doctor.consultationPrice), suffix: "MZN" },
-              { name: "consultationDuration", label: "Duração", type: "number", defaultValue: String(doctor.consultationDuration) },
-              { name: "phone", label: "Telefone", type: "tel", defaultValue: doctor.phone ?? "" },
-              { name: "email", label: "Email", type: "email", defaultValue: doctor.email ?? "" },
-              { name: "licenseNumber", label: "Cédula (OMM)", defaultValue: doctor.licenseNumber ?? "" },
+              { name: "name", label: t("doctors.fields.name"), required: true, defaultValue: doctor.name },
+              { name: "specialtyId", label: t("doctors.fields.specialty"), type: "select", required: true, defaultValue: doctor.specialtyId ?? "", options: specialties.map((s) => ({ value: s.id, label: s.name })) },
+              { name: "consultationPrice", label: t("doctors.fields.consultationPrice"), type: "money", required: true, defaultValue: String(doctor.consultationPrice), suffix: f.currency },
+              { name: "consultationDuration", label: t("doctors.fields.duration"), type: "number", defaultValue: String(doctor.consultationDuration) },
+              { name: "phone", label: t("doctors.fields.phone"), type: "tel", defaultValue: doctor.phone ?? "" },
+              { name: "email", label: t("doctors.fields.email"), type: "email", defaultValue: doctor.email ?? "" },
+              { name: "licenseNumber", label: t("doctors.fields.license"), defaultValue: doctor.licenseNumber ?? "" },
             ]}
             updateAction={updateDoctorRecord}
             deleteAction={deleteDoctorRecord}
@@ -78,17 +84,17 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
 
       {/* Analytics */}
       <div className={canViewFinancials ? "grid grid-cols-2 gap-4 lg:grid-cols-4" : "grid grid-cols-2 gap-4 lg:grid-cols-3"}>
-        <KpiCard label="Ocupação (mês)" value={`${Math.round(metrics.scheduleOccupancy * 100)}%`} icon={Gauge} hint="tempo marcado / disponível" />
-        <KpiCard label="Consultas concluídas" value={String(metrics.completed)} icon={TrendingUp} hint={`${metrics.patientsPerDay}/dia`} />
-        <KpiCard label="Taxa de faltas" value={`${Math.round(metrics.noShowRate * 100)}%`} icon={CalendarX2} invertDelta hint="do total marcado" />
-        {canViewFinancials && <KpiCard label="Receita gerada (mês)" value={formatMZN(receita)} icon={Clock} hint="reconhecida" />}
+        <KpiCard label={t("doctors.detail.kpis.occupancy")} value={`${Math.round(metrics.scheduleOccupancy * 100)}%`} icon={Gauge} hint={t("doctors.detail.kpis.occupancyHint")} />
+        <KpiCard label={t("doctors.detail.kpis.completed")} value={String(metrics.completed)} icon={TrendingUp} hint={t("doctors.detail.kpis.perDay", { count: metrics.patientsPerDay })} />
+        <KpiCard label={t("doctors.detail.kpis.noShowRate")} value={`${Math.round(metrics.noShowRate * 100)}%`} icon={CalendarX2} invertDelta hint={t("doctors.detail.kpis.noShowHint")} />
+        {canViewFinancials && <KpiCard label={t("doctors.detail.kpis.revenue")} value={f.money(receita)} icon={Clock} hint={t("doctors.detail.kpis.revenueHint")} />}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Mapa de capacidade</CardTitle>
-            <CardDescription>Ocupação média por dia e faixa horária (últimas 4 semanas)</CardDescription>
+            <CardTitle>{t("doctors.detail.capacityMap")}</CardTitle>
+            <CardDescription>{t("doctors.detail.capacityMapDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
             <CapacityHeatmap blocks={blocks} columns={heat} />
@@ -97,16 +103,16 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
 
         <Card>
           <CardHeader>
-            <CardTitle>Capacidade disponível</CardTitle>
-            <CardDescription>Este mês, até à data</CardDescription>
+            <CardTitle>{t("doctors.detail.availableCapacity")}</CardTitle>
+            <CardDescription>{t("doctors.detail.availableCapacityDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3 pt-0 text-sm">
-            <Line label="Utilização efetiva" value={`${Math.round(metrics.actualUtilisation * 100)}%`} />
-            <Line label="Taxa de preenchimento" value={`${Math.round(metrics.fillRate * 100)}%`} />
-            <Line label="Duração média" value={`${metrics.avgConsultationMin} min`} />
-            {canViewFinancials && <Line label="Receita / hora clínica" value={formatMZN(metrics.revenuePerClinicalHour)} />}
-            <Line label="Cancelamentos" value={`${Math.round(metrics.cancellationRate * 100)}%`} />
-            <Line label="Vagas ainda disponíveis" value={`${metrics.availableSlotsRemaining}`} highlight />
+            <Line label={t("doctors.detail.actualUtilisation")} value={`${Math.round(metrics.actualUtilisation * 100)}%`} />
+            <Line label={t("doctors.detail.fillRate")} value={`${Math.round(metrics.fillRate * 100)}%`} />
+            <Line label={t("doctors.detail.avgDuration")} value={t("doctors.detail.durationMinutes", { minutes: metrics.avgConsultationMin })} />
+            {canViewFinancials && <Line label={t("doctors.detail.revenuePerHour")} value={f.money(metrics.revenuePerClinicalHour)} />}
+            <Line label={t("doctors.detail.cancellations")} value={`${Math.round(metrics.cancellationRate * 100)}%`} />
+            <Line label={t("doctors.detail.slotsRemaining")} value={`${metrics.availableSlotsRemaining}`} highlight />
           </CardContent>
         </Card>
       </div>
@@ -114,8 +120,8 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
       <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Consultas por mês</CardTitle>
-            <CardDescription>Tendência dos últimos 6 meses</CardDescription>
+            <CardTitle>{t("doctors.detail.consultationsPerMonth")}</CardTitle>
+            <CardDescription>{t("doctors.detail.consultationsPerMonthDescription")}</CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
             <TrendChart data={trend} kind="int" variant="bar" height={200} />
@@ -124,21 +130,21 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
 
         <Card>
           <CardHeader>
-            <CardTitle>Horário e contactos</CardTitle>
+            <CardTitle>{t("doctors.detail.scheduleAndContacts")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2.5 pt-0 text-sm">
-            <div className="flex items-center gap-2.5"><Phone className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Telefone</span><span className="ml-auto font-medium">{doctorData.phone ?? "—"}</span></div>
-            <div className="flex items-center gap-2.5"><Mail className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Email</span><span className="ml-auto font-medium">{doctorData.email ?? "—"}</span></div>
-            <div className="flex items-center gap-2.5"><IdCard className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">Cédula</span><span className="ml-auto font-mono text-[13px]">{doctorData.license ?? "—"}</span></div>
+            <div className="flex items-center gap-2.5"><Phone className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">{t("doctors.detail.phone")}</span><span className="ml-auto font-medium">{doctorData.phone ?? "—"}</span></div>
+            <div className="flex items-center gap-2.5"><Mail className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">{t("doctors.detail.email")}</span><span className="ml-auto font-medium">{doctorData.email ?? "—"}</span></div>
+            <div className="flex items-center gap-2.5"><IdCard className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">{t("doctors.detail.license")}</span><span className="ml-auto font-mono text-[13px]">{doctorData.license ?? "—"}</span></div>
             <div className="border-t border-border pt-2.5">
-              <p className="mb-1.5 text-xs text-muted-foreground">Horário de trabalho</p>
+              <p className="mb-1.5 text-xs text-muted-foreground">{t("doctors.detail.workingHours")}</p>
               <ul className="space-y-1">
                 {doctorData.schedules.map((s) => (
                   <li key={s.id} className="flex justify-between text-[13px]">
-                    <span>{WEEKDAYS[s.weekday]}</span>
+                    <span>{WEEKDAYS[s.weekday] ? t(`doctors.weekdays.${WEEKDAYS[s.weekday]}`) : ""}</span>
                     <span className="tabular text-muted-foreground">
                       {s.startTime}–{s.endTime}
-                      {s.breakStart ? ` · pausa ${s.breakStart}–${s.breakEnd}` : ""}
+                      {s.breakStart ? t("doctors.detail.break", { start: s.breakStart, end: s.breakEnd ?? "" }) : ""}
                     </span>
                   </li>
                 ))}

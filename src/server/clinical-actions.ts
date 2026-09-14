@@ -10,6 +10,9 @@ import { can, type Permission } from "@/lib/rbac";
 import { checkAllergyConflicts, normaliseSubstance, type AllergyWarning } from "@/lib/domain/allergy-check";
 import { computeBmi, parseVital, type VitalKey } from "@/lib/domain/vitals";
 import { formatSequence, withNumberRetry } from "@/lib/sequences";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
+import type { MessageKey } from "@/i18n/types";
 
 /**
  * Escrita no prontuário clínico electrónico.
@@ -24,12 +27,21 @@ import { formatSequence, withNumberRetry } from "@/lib/sequences";
 
 export type ActionResult<T = unknown> = ({ ok: true } & T) | { error: string };
 
-type Access = { ok: true; user: SessionUser; clinicId: string } | { ok: false; error: string };
+type Access = { ok: true; user: SessionUser; clinicId: string; t: Translator } | { ok: false; error: string };
 
 async function guard(permission: Permission): Promise<Access> {
   const user = await requireUser();
-  if (!can(user.role, permission)) return { ok: false, error: "Sem permissão para esta operação." };
-  return { ok: true, user, clinicId: user.clinicId };
+  const t = await getTranslator();
+  if (!can(user.role, permission)) return { ok: false, error: t("clinical.errors.noPermission") };
+  return { ok: true, user, clinicId: user.clinicId, t };
+}
+
+/**
+ * Mensagem da primeira falha de validação. Os esquemas usam chaves do
+ * dicionário; mensagens nativas do zod (que não são chaves) passam intactas.
+ */
+function issueMessage(t: Translator, error: z.ZodError): string {
+  return t((error.issues[0]?.message ?? "") as MessageKey);
 }
 
 async function requirePatient(clinicId: string, patientId: string) {
@@ -66,7 +78,7 @@ function revalidatePatient(patientId: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const encounterSchema = z.object({
-  patientId: z.string().min(1, "Paciente obrigatório."),
+  patientId: z.string().min(1, "clinical.errors.patientRequired"),
   type: z.enum(["CONSULTA", "URGENCIA", "ACOMPANHAMENTO", "INTERNAMENTO", "PROCEDIMENTO", "EXAME", "ENCAMINHAMENTO"]),
   doctorId: z.string().optional().default(""),
   specialtyId: z.string().optional().default(""),
@@ -80,18 +92,18 @@ export async function createEncounter(values: EncounterValues): Promise<ActionRe
   const access = await guard("encounter.manage");
   if (!access.ok) return { error: access.error };
   const parsed = encounterSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const patient = await requirePatient(access.clinicId, parsed.data.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
 
   if (parsed.data.doctorId) {
     const doctor = await prisma.doctor.findFirst({ where: { id: parsed.data.doctorId, clinicId: access.clinicId }, select: { id: true } });
-    if (!doctor) return { error: "Médico inválido." };
+    if (!doctor) return { error: access.t("clinical.errors.invalidDoctor") };
   }
   if (parsed.data.specialtyId) {
     const specialty = await prisma.specialty.findFirst({ where: { id: parsed.data.specialtyId, clinicId: access.clinicId }, select: { id: true } });
-    if (!specialty) return { error: "Especialidade inválida." };
+    if (!specialty) return { error: access.t("clinical.errors.invalidSpecialty") };
   }
 
   const startedAt = parseDate(parsed.data.startedAt) ?? new Date();
@@ -133,8 +145,8 @@ export async function closeEncounter(encounterId: string, summary: string, outco
     where: { id: encounterId, clinicId: access.clinicId },
     select: { id: true, patientId: true, status: true, summary: true, outcome: true, endedAt: true, version: true },
   });
-  if (!existing) return { error: "Episódio não encontrado." };
-  if (existing.status === "CANCELADO") return { error: "Episódio cancelado não pode ser concluído." };
+  if (!existing) return { error: access.t("clinical.errors.encounterNotFound") };
+  if (existing.status === "CANCELADO") return { error: access.t("clinical.errors.encounterCancelled") };
 
   const updated = await prisma.encounter.update({
     where: { id: existing.id },
@@ -182,19 +194,19 @@ export async function recordVitals(values: VitalsValues): Promise<ActionResult<{
   const access = await guard("vitals.record");
   if (!access.ok) return { error: access.error };
   const patient = await requirePatient(access.clinicId, values.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
 
   const numbers: Partial<Record<VitalKey, number | null>> = {};
   try {
-    for (const key of VITAL_FIELDS) numbers[key] = parseVital(key, values[key] ?? null);
+    for (const key of VITAL_FIELDS) numbers[key] = parseVital(key, values[key] ?? null, access.t);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Sinais vitais inválidos." };
+    return { error: error instanceof Error ? error.message : access.t("clinical.errors.invalidVitals") };
   }
   if (VITAL_FIELDS.every((key) => numbers[key] === null)) {
-    return { error: "Registe pelo menos um sinal vital." };
+    return { error: access.t("clinical.errors.vitalsRequired") };
   }
 
-  const links = await resolveClinicalLinks(access.clinicId, patient.id, values);
+  const links = await resolveClinicalLinks(access.t, access.clinicId, patient.id, values);
   if ("error" in links) return links;
 
   const created = await prisma.vitalSign.create({
@@ -233,7 +245,7 @@ export async function recordVitals(values: VitalsValues): Promise<ActionResult<{
 
 const diagnosisSchema = z.object({
   patientId: z.string().min(1),
-  description: z.string().trim().min(3, "Descreva o diagnóstico."),
+  description: z.string().trim().min(3, "clinical.errors.diagnosisDescription"),
   kind: z.enum(["PRINCIPAL", "SECUNDARIO", "DIFERENCIAL"]).default("PRINCIPAL"),
   certainty: z.enum(["PROVISORIO", "CONFIRMADO", "REFUTADO"]).default("PROVISORIO"),
   code: z.string().trim().max(32).optional().default(""),
@@ -250,11 +262,11 @@ export async function addDiagnosis(values: DiagnosisValues): Promise<ActionResul
   const access = await guard("consultation.conduct");
   if (!access.ok) return { error: access.error };
   const parsed = diagnosisSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const patient = await requirePatient(access.clinicId, parsed.data.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
-  const links = await resolveClinicalLinks(access.clinicId, patient.id, parsed.data);
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
+  const links = await resolveClinicalLinks(access.t, access.clinicId, patient.id, parsed.data);
   if ("error" in links) return links;
 
   const created = await prisma.diagnosis.create({
@@ -295,7 +307,7 @@ export async function deactivateDiagnosis(id: string, reason: string): Promise<A
     where: { id, clinicId: access.clinicId },
     select: { id: true, patientId: true, isActive: true, notes: true, certainty: true },
   });
-  if (!existing) return { error: "Diagnóstico não encontrado." };
+  if (!existing) return { error: access.t("clinical.errors.diagnosisNotFound") };
 
   const updated = await prisma.diagnosis.update({
     where: { id: existing.id },
@@ -319,7 +331,7 @@ export async function deactivateDiagnosis(id: string, reason: string): Promise<A
 
 const allergySchema = z.object({
   patientId: z.string().min(1),
-  substance: z.string().trim().min(2, "Indique a substância."),
+  substance: z.string().trim().min(2, "clinical.errors.allergySubstance"),
   category: z.enum(["MEDICAMENTO", "ALIMENTO", "AMBIENTAL", "BIOLOGICO", "OUTRO"]).default("MEDICAMENTO"),
   kind: z.enum(["ALERGIA", "INTOLERANCIA"]).default("ALERGIA"),
   reaction: z.string().max(1000).optional().default(""),
@@ -335,17 +347,17 @@ export async function addAllergy(values: AllergyValues): Promise<ActionResult<{ 
   const access = await guard("allergy.manage");
   if (!access.ok) return { error: access.error };
   const parsed = allergySchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const patient = await requirePatient(access.clinicId, parsed.data.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
 
   const substanceKey = normaliseSubstance(parsed.data.substance);
   const duplicate = await prisma.allergy.findFirst({
     where: { clinicId: access.clinicId, patientId: patient.id, substanceKey, status: "ACTIVA" },
     select: { id: true },
   });
-  if (duplicate) return { error: "Já existe uma alergia activa registada para esta substância." };
+  if (duplicate) return { error: access.t("clinical.errors.allergyDuplicate") };
 
   const created = await prisma.allergy.create({
     data: {
@@ -403,7 +415,7 @@ export async function setAllergyStatus(
     where: { id, clinicId: access.clinicId },
     select: { id: true, patientId: true, status: true, substance: true },
   });
-  if (!existing) return { error: "Alergia não encontrada." };
+  if (!existing) return { error: access.t("clinical.errors.allergyNotFound") };
 
   const updated = await prisma.allergy.update({ where: { id: existing.id }, data: { status }, select: { id: true, status: true } });
   await auditAs(actor(access.user), {
@@ -423,7 +435,7 @@ export async function setAllergyStatus(
 
 const prescriptionItemSchema = z.object({
   medicationId: z.string().optional().default(""),
-  medicationName: z.string().trim().min(2, "Indique o medicamento."),
+  medicationName: z.string().trim().min(2, "clinical.errors.medicationRequired"),
   activeIngredient: z.string().trim().max(200).optional().default(""),
   dose: z.string().trim().max(60).optional().default(""),
   doseUnit: z.string().trim().max(30).optional().default(""),
@@ -446,7 +458,7 @@ const prescriptionSchema = z.object({
   replacesId: z.string().optional().default(""),
   /** Confirmação explícita perante alertas de alergia graves. */
   acknowledgeAllergyWarnings: z.boolean().optional().default(false),
-  items: z.array(prescriptionItemSchema).min(1, "Adicione pelo menos um medicamento."),
+  items: z.array(prescriptionItemSchema).min(1, "clinical.errors.medicationsRequired"),
 });
 
 export type PrescriptionValues = z.input<typeof prescriptionSchema>;
@@ -459,7 +471,7 @@ export async function checkPrescriptionAllergies(
   const access = await guard("prescription.create");
   if (!access.ok) return { error: access.error };
   const patient = await requirePatient(access.clinicId, patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
 
   const allergies = await prisma.allergy.findMany({
     where: { clinicId: access.clinicId, patientId: patient.id, status: "ACTIVA" },
@@ -471,6 +483,7 @@ export async function checkPrescriptionAllergies(
     const found = checkAllergyConflicts(
       { medicationName: item.medicationName, activeIngredient: item.activeIngredient ?? null },
       allergies,
+      access.t,
     );
     if (found.length) warnings[item.medicationName] = found;
   }
@@ -481,11 +494,11 @@ export async function createPrescription(values: PrescriptionValues): Promise<Ac
   const access = await guard("prescription.create");
   if (!access.ok) return { error: access.error };
   const parsed = prescriptionSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const patient = await requirePatient(access.clinicId, parsed.data.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
-  const links = await resolveClinicalLinks(access.clinicId, patient.id, parsed.data);
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
+  const links = await resolveClinicalLinks(access.t, access.clinicId, patient.id, parsed.data);
   if ("error" in links) return links;
 
   // Medicamentos do catálogo têm de pertencer à clínica.
@@ -497,7 +510,7 @@ export async function createPrescription(values: PrescriptionValues): Promise<Ac
       })
     : [];
   const catalogById = new Map(catalog.map((m) => [m.id, m]));
-  for (const id of catalogIds) if (!catalogById.has(id)) return { error: "Medicamento do catálogo inválido." };
+  for (const id of catalogIds) if (!catalogById.has(id)) return { error: access.t("clinical.errors.invalidCatalogMedication") };
 
   const allergies = await prisma.allergy.findMany({
     where: { clinicId: access.clinicId, patientId: patient.id, status: "ACTIVA" },
@@ -508,7 +521,7 @@ export async function createPrescription(values: PrescriptionValues): Promise<Ac
     const fromCatalog = item.medicationId ? catalogById.get(item.medicationId) : undefined;
     const medicationName = fromCatalog?.name ?? item.medicationName;
     const activeIngredient = item.activeIngredient || fromCatalog?.activeIngredient || null;
-    const warnings = checkAllergyConflicts({ medicationName, activeIngredient }, allergies);
+    const warnings = checkAllergyConflicts({ medicationName, activeIngredient }, allergies, access.t);
     return { item, medicationName, activeIngredient, warnings };
   });
 
@@ -516,9 +529,7 @@ export async function createPrescription(values: PrescriptionValues): Promise<Ac
   const blocking = allWarnings.filter((w) => w.severity === "GRAVE" || w.severity === "FATAL");
   if (blocking.length && !parsed.data.acknowledgeAllergyWarnings) {
     return {
-      error:
-        `Conflito com alergia registada: ${blocking.map((w) => w.substance).join(", ")}. ` +
-        "Reveja a prescrição ou confirme explicitamente para prosseguir.",
+      error: access.t("clinical.errors.allergyConflict", { substances: blocking.map((w) => w.substance).join(", ") }),
     };
   }
 
@@ -531,8 +542,8 @@ export async function createPrescription(values: PrescriptionValues): Promise<Ac
       where: { id: parsed.data.replacesId, clinicId: access.clinicId, patientId: patient.id },
       select: { id: true, number: true, status: true, replacedBy: { select: { id: true } } },
     });
-    if (!previous) return { error: "Prescrição a substituir não encontrada." };
-    if (previous.replacedBy) return { error: "Essa prescrição já foi substituída." };
+    if (!previous) return { error: access.t("clinical.errors.replacedPrescriptionNotFound") };
+    if (previous.replacedBy) return { error: access.t("clinical.errors.prescriptionAlreadyReplaced") };
     superseded = { id: previous.id, number: previous.number, status: previous.status };
   }
 
@@ -618,7 +629,7 @@ export async function setPrescriptionStatus(
     where: { id, clinicId: access.clinicId },
     select: { id: true, patientId: true, status: true, number: true },
   });
-  if (!existing) return { error: "Prescrição não encontrada." };
+  if (!existing) return { error: access.t("clinical.errors.prescriptionNotFound") };
 
   const updated = await prisma.prescription.update({
     where: { id: existing.id },
@@ -642,7 +653,7 @@ export async function setPrescriptionStatus(
 
 const orderSchema = z.object({
   patientId: z.string().min(1),
-  name: z.string().trim().min(2, "Indique o exame."),
+  name: z.string().trim().min(2, "clinical.errors.orderName"),
   category: z.enum(["LABORATORIO", "IMAGIOLOGIA", "OUTRO"]).default("LABORATORIO"),
   priority: z.enum(["ROTINA", "URGENTE", "EMERGENTE"]).default("ROTINA"),
   serviceId: z.string().optional().default(""),
@@ -659,16 +670,16 @@ export async function createDiagnosticOrder(values: DiagnosticOrderValues): Prom
   const access = await guard("laboratory.manage");
   if (!access.ok) return { error: access.error };
   const parsed = orderSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const patient = await requirePatient(access.clinicId, parsed.data.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
-  const links = await resolveClinicalLinks(access.clinicId, patient.id, parsed.data);
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
+  const links = await resolveClinicalLinks(access.t, access.clinicId, patient.id, parsed.data);
   if ("error" in links) return links;
 
   if (parsed.data.serviceId) {
     const service = await prisma.service.findFirst({ where: { id: parsed.data.serviceId, clinicId: access.clinicId }, select: { id: true } });
-    if (!service) return { error: "Serviço inválido." };
+    if (!service) return { error: access.t("clinical.errors.invalidService") };
   }
 
   const now = new Date();
@@ -718,7 +729,7 @@ export async function setDiagnosticOrderStatus(
     where: { id, clinicId: access.clinicId },
     select: { id: true, patientId: true, status: true, scheduledAt: true, collectedAt: true },
   });
-  if (!existing) return { error: "Pedido não encontrado." };
+  if (!existing) return { error: access.t("clinical.errors.orderNotFound") };
 
   const now = new Date();
   const updated = await prisma.diagnosticOrder.update({
@@ -745,7 +756,7 @@ export async function setDiagnosticOrderStatus(
 }
 
 const resultItemSchema = z.object({
-  name: z.string().trim().min(1, "Indique o parâmetro."),
+  name: z.string().trim().min(1, "clinical.errors.resultParameter"),
   value: z.string().trim().max(200).optional().default(""),
   unit: z.string().trim().max(30).optional().default(""),
   referenceRange: z.string().trim().max(80).optional().default(""),
@@ -771,14 +782,14 @@ export async function recordDiagnosticResult(values: DiagnosticResultValues): Pr
   const access = await guard("laboratory.manage");
   if (!access.ok) return { error: access.error };
   const parsed = resultSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const order = await prisma.diagnosticOrder.findFirst({
     where: { id: parsed.data.orderId, clinicId: access.clinicId },
     select: { id: true, patientId: true, name: true, status: true, patient: { select: { name: true } }, result: { select: { id: true } } },
   });
-  if (!order) return { error: "Pedido não encontrado." };
-  if (order.status === "CANCELADO") return { error: "Pedido cancelado — não é possível lançar resultados." };
+  if (!order) return { error: access.t("clinical.errors.orderNotFound") };
+  if (order.status === "CANCELADO") return { error: access.t("clinical.errors.orderCancelled") };
 
   const now = new Date();
   const performedAt = parseDate(parsed.data.performedAt) ?? now;
@@ -864,7 +875,7 @@ export async function recordDiagnosticResult(values: DiagnosticResultValues): Pr
 
 const procedureSchema = z.object({
   patientId: z.string().min(1),
-  name: z.string().trim().min(2, "Indique o procedimento."),
+  name: z.string().trim().min(2, "clinical.errors.procedureName"),
   status: z.enum(["PLANEADO", "REALIZADO", "CANCELADO"]).default("REALIZADO"),
   performedAt: z.string().optional().default(""),
   description: z.string().max(4000).optional().default(""),
@@ -882,11 +893,11 @@ export async function addProcedure(values: ProcedureValues): Promise<ActionResul
   const access = await guard("consultation.conduct");
   if (!access.ok) return { error: access.error };
   const parsed = procedureSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const patient = await requirePatient(access.clinicId, parsed.data.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
-  const links = await resolveClinicalLinks(access.clinicId, patient.id, parsed.data);
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
+  const links = await resolveClinicalLinks(access.t, access.clinicId, patient.id, parsed.data);
   if ("error" in links) return links;
 
   const created = await prisma.clinicalProcedure.create({
@@ -922,7 +933,7 @@ export async function addProcedure(values: ProcedureValues): Promise<ActionResul
 
 const treatmentSchema = z.object({
   patientId: z.string().min(1),
-  name: z.string().trim().min(2, "Indique o tratamento."),
+  name: z.string().trim().min(2, "clinical.errors.treatmentName"),
   plan: z.string().max(4000).optional().default(""),
   startedAt: z.string().optional().default(""),
   endedAt: z.string().optional().default(""),
@@ -937,11 +948,11 @@ export async function addTreatment(values: TreatmentValues): Promise<ActionResul
   const access = await guard("consultation.conduct");
   if (!access.ok) return { error: access.error };
   const parsed = treatmentSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const patient = await requirePatient(access.clinicId, parsed.data.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
-  const links = await resolveClinicalLinks(access.clinicId, patient.id, parsed.data);
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
+  const links = await resolveClinicalLinks(access.t, access.clinicId, patient.id, parsed.data);
   if ("error" in links) return links;
 
   const created = await prisma.treatment.create({
@@ -988,18 +999,18 @@ export async function createAdmission(values: AdmissionValues): Promise<ActionRe
   const access = await guard("admission.manage");
   if (!access.ok) return { error: access.error };
   const parsed = admissionSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
 
   const patient = await requirePatient(access.clinicId, parsed.data.patientId);
-  if (!patient) return { error: "Paciente não encontrado." };
-  const links = await resolveClinicalLinks(access.clinicId, patient.id, parsed.data);
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
+  const links = await resolveClinicalLinks(access.t, access.clinicId, patient.id, parsed.data);
   if ("error" in links) return links;
 
   const open = await prisma.admission.findFirst({
     where: { clinicId: access.clinicId, patientId: patient.id, status: "ADMITIDO" },
     select: { id: true, number: true },
   });
-  if (open) return { error: `O paciente já tem um internamento activo (${open.number}).` };
+  if (open) return { error: access.t("clinical.errors.activeAdmission", { number: open.number }) };
 
   const now = new Date();
   const created = await withNumberRetry(async () => {
@@ -1044,8 +1055,8 @@ export async function dischargeAdmission(
     where: { id, clinicId: access.clinicId },
     select: { id: true, patientId: true, status: true, dischargedAt: true, encounterId: true },
   });
-  if (!existing) return { error: "Internamento não encontrado." };
-  if (existing.status !== "ADMITIDO") return { error: "Este internamento já foi encerrado." };
+  if (!existing) return { error: access.t("clinical.errors.admissionNotFound") };
+  if (existing.status !== "ADMITIDO") return { error: access.t("clinical.errors.admissionClosed") };
 
   const dischargedAt = parseDate(values.dischargedAt) ?? new Date();
 
@@ -1101,6 +1112,7 @@ function actor(user: SessionUser) {
  * clínica **e** ao mesmo paciente. Impede IDOR por payload manipulado.
  */
 async function resolveClinicalLinks(
+  t: Translator,
   clinicId: string,
   patientId: string,
   values: { encounterId?: string; consultationId?: string; admissionId?: string },
@@ -1109,18 +1121,18 @@ async function resolveClinicalLinks(
 
   if (values.encounterId) {
     const found = await prisma.encounter.findFirst({ where: { id: values.encounterId, clinicId, patientId }, select: { id: true } });
-    if (!found) return { error: "Episódio inválido para este paciente." };
+    if (!found) return { error: t("clinical.errors.invalidEncounterForPatient") };
     out.encounterId = found.id;
   }
   if (values.consultationId) {
     const found = await prisma.consultation.findFirst({ where: { id: values.consultationId, clinicId, patientId }, select: { id: true, encounterId: true } });
-    if (!found) return { error: "Consulta inválida para este paciente." };
+    if (!found) return { error: t("clinical.errors.invalidConsultationForPatient") };
     out.consultationId = found.id;
     out.encounterId = out.encounterId ?? found.encounterId;
   }
   if (values.admissionId) {
     const found = await prisma.admission.findFirst({ where: { id: values.admissionId, clinicId, patientId }, select: { id: true, encounterId: true } });
-    if (!found) return { error: "Internamento inválido para este paciente." };
+    if (!found) return { error: t("clinical.errors.invalidAdmissionForPatient") };
     out.admissionId = found.id;
     out.encounterId = out.encounterId ?? found.encounterId;
   }

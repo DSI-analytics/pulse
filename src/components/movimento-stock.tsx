@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/toast";
 import { registerStockMovement } from "@/server/inventory-actions";
+import { useT } from "@/i18n/client";
 
 export interface StockItemOption {
   id: string;
@@ -17,12 +18,7 @@ export interface StockItemOption {
   currentStock: number;
 }
 
-const TYPES = [
-  { value: "SAIDA", label: "Saída (consumo)" },
-  { value: "ENTRADA", label: "Entrada manual" },
-  { value: "AJUSTE", label: "Ajuste de inventário" },
-  { value: "PERDA", label: "Perda / quebra" },
-] as const;
+const TYPES = ["SAIDA", "ENTRADA", "AJUSTE", "PERDA"] as const;
 
 /**
  * Registers a stock movement. Renders either the page-level button ("Registar
@@ -35,6 +31,7 @@ export function MovimentoStock({
   items: StockItemOption[];
   item?: StockItemOption;
 }) {
+  const t = useT();
   const [open, setOpen] = React.useState(false);
   return (
     <>
@@ -42,13 +39,13 @@ export function MovimentoStock({
         <button
           onClick={() => setOpen(true)}
           className="inline-flex items-center gap-1 rounded-md border border-border-strong px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary hover:text-primary"
-          title={`Movimentar ${item.name}`}
+          title={t("stock.movement.rowTitle", { name: item.name })}
         >
-          <Minus className="size-3" /> Movimentar
+          <Minus className="size-3" /> {t("stock.movement.rowButton")}
         </button>
       ) : (
         <Button size="sm" variant="secondary" onClick={() => setOpen(true)}>
-          <ArrowLeftRight className="size-4" /> Registar movimento
+          <ArrowLeftRight className="size-4" /> {t("stock.movement.button")}
         </Button>
       )}
       {open && <MovimentoDialog items={items} preset={item} onClose={() => setOpen(false)} />}
@@ -67,8 +64,9 @@ function MovimentoDialog({
 }) {
   const router = useRouter();
   const toast = useToast();
+  const t = useT();
   const [itemId, setItemId] = React.useState(preset?.id ?? "");
-  const [type, setType] = React.useState<string>("SAIDA");
+  const [type, setType] = React.useState<(typeof TYPES)[number]>("SAIDA");
   const [quantity, setQuantity] = React.useState("1");
   const [reason, setReason] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -84,14 +82,14 @@ function MovimentoDialog({
 
   async function submit() {
     setError(null);
-    if (!itemId) return setError("Selecione o artigo.");
-    if (qty <= 0) return setError("Indique uma quantidade maior que zero.");
+    if (!itemId) return setError(t("stock.movement.errors.itemRequired"));
+    if (qty <= 0) return setError(t("stock.movement.errors.quantityPositive"));
 
     setSaving(true);
-    const res = await registerStockMovement({ itemId, type: type as "SAIDA", quantity: qty, reason });
+    const res = await registerStockMovement({ itemId, type, quantity: qty, reason });
     setSaving(false);
     if ("error" in res && res.error) return setError(res.error);
-    toast("Movimento de stock registado");
+    toast(t("stock.movement.toast"));
     router.refresh();
     onClose();
   }
@@ -100,22 +98,22 @@ function MovimentoDialog({
     <Modal
       open
       onClose={onClose}
-      title="Movimento de stock"
-      description="Registe consumos, entradas manuais, ajustes de inventário ou perdas."
+      title={t("stock.movement.title")}
+      description={t("stock.movement.description")}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button variant="ghost" onClick={onClose}>{t("common.cancel")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Registar
+            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("stock.movement.submit")}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
         <div>
-          <Label>Artigo <span className="text-danger">*</span></Label>
+          <Label>{t("stock.movement.item")} <span className="text-danger">*</span></Label>
           <Select className="mt-1.5" value={itemId} onChange={(e) => setItemId(e.target.value)}>
-            <option value="">Selecionar…</option>
+            <option value="">{t("stock.movement.select")}</option>
             {items.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.name} — {i.currentStock} {i.unit}
@@ -126,32 +124,32 @@ function MovimentoDialog({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label>Tipo</Label>
-            <Select className="mt-1.5" value={type} onChange={(e) => setType(e.target.value)}>
-              {TYPES.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
+            <Label>{t("stock.movement.type")}</Label>
+            <Select className="mt-1.5" value={type} onChange={(e) => setType(e.target.value as (typeof TYPES)[number])}>
+              {TYPES.map((value) => (
+                <option key={value} value={value}>{t(`stock.movement.types.${value}`)}</option>
               ))}
             </Select>
           </div>
           <div>
-            <Label>{type === "AJUSTE" ? "Stock contado" : "Quantidade"}</Label>
+            <Label>{type === "AJUSTE" ? t("stock.movement.countedStock") : t("stock.movement.quantity")}</Label>
             <Input className="mt-1.5" inputMode="numeric" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           </div>
         </div>
 
         <div>
-          <Label>Motivo</Label>
+          <Label>{t("stock.movement.reason")}</Label>
           <Input
             className="mt-1.5"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
-            placeholder={type === "SAIDA" ? "Ex.: consumo em consultas" : "Ex.: contagem mensal"}
+            placeholder={type === "SAIDA" ? t("stock.movement.reasonPlaceholderOut") : t("stock.movement.reasonPlaceholderOther")}
           />
         </div>
 
         {chosen && (
           <div className="flex items-center justify-between rounded-md bg-surface-2 px-3 py-2 text-sm">
-            <span className="text-muted-foreground">Stock após o movimento</span>
+            <span className="text-muted-foreground">{t("stock.movement.projected")}</span>
             <span className={`font-semibold tabular ${projected! < 0 ? "text-danger" : ""}`}>
               {chosen.currentStock} → {projected} {chosen.unit}
             </span>

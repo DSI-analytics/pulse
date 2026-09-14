@@ -8,10 +8,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { InsightsFeed } from "@/components/insights-feed";
 import { InsightsChat } from "@/components/insights-chat";
 import { Badge } from "@/components/ui/badge";
+import { getTranslator } from "@/i18n/server";
+
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("insights.title") };
+}
 
 export default async function InsightsPage() {
   // `insights.view` — o Gestor da Clínica tem-na; não implica acesso administrativo.
   const user = await requirePermission("insights.view");
+  const t = await getTranslator();
 
   const [insights, clinics, authorized] = await Promise.all([
     getInsights(user.clinicId),
@@ -19,22 +26,22 @@ export default async function InsightsPage() {
     authorizedClinicIds(user),
   ]);
 
-  const suggestions = suggestionsFor(user);
-  const clinicName = clinics[0]?.name ?? "a sua instituição";
+  const suggestions = suggestionsFor(user, t);
+  const clinicName = clinics[0]?.name ?? t("insights.clinicFallback");
 
   return (
     <>
       <PageHeader
-        eyebrow="Assistente"
-        title="Insights"
-        description={`Indicadores de ${clinicName} — dados agregados, sem diagnóstico clínico.`}
+        eyebrow={t("insights.eyebrow")}
+        title={t("insights.title")}
+        description={t("insights.description", { clinic: clinicName })}
       />
 
       <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2"><Sparkles className="size-4 text-primary" /> Feed de gestão</CardTitle>
-            <CardDescription>{insights.length} observações geradas a partir dos seus dados</CardDescription>
+            <CardTitle className="flex items-center gap-2"><Sparkles className="size-4 text-primary" /> {t("insights.feed.title")}</CardTitle>
+            <CardDescription>{t("insights.feed.count", { count: insights.length })}</CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
             <InsightsFeed insights={insights} />
@@ -44,20 +51,18 @@ export default async function InsightsPage() {
         <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <MessageSquare className="size-4 text-primary" /> Assistente de gestão
-              {authorized.length > 1 && <Badge variant="neutral">{authorized.length} instituições autorizadas</Badge>}
+              <MessageSquare className="size-4 text-primary" /> {t("insights.assistant.title")}
+              {authorized.length > 1 && <Badge variant="neutral">{t("insights.assistant.authorizedClinics", { count: authorized.length })}</Badge>}
             </CardTitle>
             <CardDescription>
-              Pergunte em linguagem natural. As respostas usam apenas indicadores agregados a que o seu perfil tem acesso.
+              {t("insights.assistant.description")}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-1 flex-col pt-0">
             <InsightsChat suggestions={suggestions} />
             <p className="mt-3 flex items-start gap-1.5 text-xs text-subtle-foreground">
               <ShieldCheck className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-              O assistente não tem acesso à base de dados: escolhe um indicador de uma lista fixa e o servidor executa a
-              consulta já limitada à sua instituição e às suas permissões. Nenhum dado individual de paciente é enviado
-              ao modelo.
+              {t("insights.assistant.privacy")}
             </p>
           </CardContent>
         </Card>

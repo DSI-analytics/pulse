@@ -1,4 +1,7 @@
-import { formatMZN } from "@/lib/money";
+"use client";
+
+import { useFormat } from "@/i18n/client";
+import { barColor } from "@/lib/chart-color";
 import { cn } from "@/lib/utils";
 
 export interface BarDatum {
@@ -8,7 +11,11 @@ export interface BarDatum {
   meta?: string;
 }
 
-/** Horizontal magnitude bars (single-hue by default). Server-renderable. */
+/**
+ * Barras horizontais de magnitude. A quantidade de barras determina níveis
+ * uniformes de tonalidade, preservando a cor própria da série quando existe.
+ * Props serializáveis, para páginas de servidor.
+ */
 export function BarList({
   data,
   format = "mzn",
@@ -18,12 +25,13 @@ export function BarList({
   format?: "mzn" | "int";
   className?: string;
 }) {
+  const f = useFormat();
   const max = Math.max(1, ...data.map((d) => d.value));
-  const fmt = (v: number) => (format === "mzn" ? formatMZN(v) : v.toLocaleString("pt-PT"));
+  const fmt = (v: number) => (format === "mzn" ? f.money(v) : f.number(v));
 
   return (
     <div className={cn("space-y-3", className)}>
-      {data.map((d) => (
+      {data.map((d, index) => (
         <div key={d.label} className="grid grid-cols-[minmax(0,9rem)_1fr_auto] items-center gap-3">
           <span className="truncate text-[13px] font-medium" title={d.label}>
             {d.label}
@@ -34,7 +42,7 @@ export function BarList({
               className="h-full rounded-full"
               style={{
                 width: `${Math.max(2, (d.value / max) * 100)}%`,
-                backgroundColor: d.color ?? "var(--primary)",
+                backgroundColor: barColor(index, data.length, d.color ?? "var(--primary)"),
               }}
             />
           </div>

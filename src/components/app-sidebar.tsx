@@ -1,14 +1,24 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { NAV_ITEMS } from "@/lib/nav";
+import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav";
 import { PulseMark } from "@/components/pulse-mark";
+import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 
-const GROUPS = ["Operação", "Gestão", "Sistema"] as const;
+export function isNavActive(href: string, pathname: string) {
+  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
 
+/**
+ * Barra lateral flutuante. O item activo é marcado por uma cápsula com aresta
+ * sólida e brilho neon que desliza entre posições.
+ *
+ * A cápsula é posicionada escrevendo o estilo directamente no nó (sem estado
+ * React) e mostrada/escondida por `visibility` — nunca por opacidade.
+ */
 export function AppSidebar({
   allowed,
   clinicName,
@@ -19,12 +29,50 @@ export function AppSidebar({
   initiallyCollapsed?: boolean;
 }) {
   const pathname = usePathname();
+  const t = useT();
   const [collapsed, setCollapsed] = useState(initiallyCollapsed);
+  const listRef = useRef<HTMLDivElement>(null);
+  const indicatorRef = useRef<HTMLSpanElement>(null);
+  const itemRefs = useRef(new Map<string, HTMLAnchorElement>());
+  const placedOnce = useRef(false);
+
   const visible = NAV_ITEMS.filter((i) => allowed.includes(i.href));
-  const visibleGroups = GROUPS.map((group) => ({
+  const visibleGroups = NAV_GROUPS.map((group) => ({
     group,
     items: visible.filter((item) => item.group === group),
   })).filter(({ items }) => items.length > 0);
+  const activeHref = visible.find((item) => isNavActive(item.href, pathname))?.href ?? null;
+
+  useLayoutEffect(() => {
+    const place = () => {
+      const indicator = indicatorRef.current;
+      const list = listRef.current;
+      const node = activeHref ? itemRefs.current.get(activeHref) : undefined;
+      if (!indicator || !list) return;
+      if (!node) {
+        indicator.style.visibility = "hidden";
+        return;
+      }
+      const top = node.getBoundingClientRect().top - list.getBoundingClientRect().top;
+      if (!placedOnce.current) indicator.style.transition = "none";
+      indicator.style.visibility = "visible";
+      indicator.style.height = `${node.offsetHeight}px`;
+      indicator.style.transform = `translateY(${top}px)`;
+      if (!placedOnce.current) {
+        placedOnce.current = true;
+        requestAnimationFrame(() => {
+          if (indicatorRef.current) indicatorRef.current.style.transition = "";
+        });
+      }
+    };
+    place();
+    const settle = setTimeout(place, 440);
+    window.addEventListener("resize", place);
+    return () => {
+      clearTimeout(settle);
+      window.removeEventListener("resize", place);
+    };
+  }, [activeHref, collapsed]);
 
   function toggleSidebar() {
     const next = !collapsed;
@@ -35,76 +83,92 @@ export function AppSidebar({
   return (
     <aside
       className={cn(
-        "hidden shrink-0 flex-col border-r border-border bg-surface transition-[width] duration-200 lg:flex",
-        collapsed ? "w-16" : "w-60",
+        "sticky top-0 hidden h-dvh shrink-0 p-3 pr-0 transition-[width] duration-[420ms] ease-[var(--ease-spring)] lg:block print:hidden",
+        collapsed ? "w-[84px]" : "w-[264px]",
       )}
     >
-      <div className={cn("flex h-14 items-center border-b border-border", collapsed ? "justify-center px-2" : "gap-2.5 px-3")}>
-        {!collapsed && (
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <PulseMark className="size-5 text-white" />
+      <div className="glass flex h-full flex-col overflow-hidden rounded-[24px]">
+        <div className={cn("flex h-16 shrink-0 items-center", collapsed ? "justify-center px-2" : "gap-2.5 pl-4 pr-2.5")}>
+          {!collapsed && (
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-[11px] bg-primary shadow-glow">
+                <PulseMark className="size-5 text-primary-foreground" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-display text-[15px] font-semibold leading-none tracking-[-0.01em]">Pulso</p>
+                <p className="mt-1 truncate text-[11px] text-muted-foreground">{clinicName}</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <p className="font-display text-[15px] font-bold leading-none">Pulso</p>
-              <p className="truncate text-[11px] text-muted-foreground">{clinicName}</p>
-            </div>
+          )}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            className="press flex size-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-fill-strong hover:text-foreground"
+            aria-label={collapsed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
+            aria-expanded={!collapsed}
+            title={collapsed ? t("nav.expandShort") : t("nav.collapseShort")}
+          >
+            {collapsed ? <PanelLeftOpen className="size-[18px]" /> : <PanelLeftClose className="size-[18px]" />}
+          </button>
+        </div>
+
+        <div className="mx-3 h-px shrink-0 bg-border" aria-hidden />
+
+        <nav className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-4 pt-3", collapsed ? "px-2.5" : "px-3")}>
+          <div ref={listRef} className={cn("relative", collapsed ? "space-y-3" : "space-y-5")}>
+            <span
+              ref={indicatorRef}
+              aria-hidden
+              className="pointer-events-none invisible absolute inset-x-0 top-0 h-10 rounded-[12px] border border-primary-edge bg-primary-muted shadow-glow transition-[transform,height] duration-[420ms] ease-[var(--ease-spring)]"
+            />
+
+            {visibleGroups.map(({ group, items }, groupIndex) => (
+              <div key={group} className={cn("relative", collapsed && groupIndex > 0 && "border-t border-border pt-3")}>
+                <p
+                  className={cn(
+                    "px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-subtle-foreground",
+                    collapsed && "sr-only",
+                  )}
+                >
+                  {t(`nav.groups.${group}`)}
+                </p>
+                <ul className="space-y-0.5">
+                  {items.map((item) => {
+                    const active = item.href === activeHref;
+                    const Icon = item.icon;
+                    const label = t(item.labelKey);
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          ref={(node) => {
+                            if (node) itemRefs.current.set(item.href, node);
+                            else itemRefs.current.delete(item.href);
+                          }}
+                          href={item.href}
+                          title={collapsed ? label : undefined}
+                          aria-label={collapsed ? label : undefined}
+                          aria-current={active ? "page" : undefined}
+                          className={cn(
+                            "press relative flex h-10 items-center gap-3 rounded-[12px] px-3 text-sm font-medium antialiased",
+                            collapsed && "justify-center px-0",
+                            active ? "text-primary" : "text-muted-foreground hover:bg-fill hover:text-foreground",
+                          )}
+                        >
+                          <Icon className={cn("size-[18px] shrink-0", active ? "text-primary" : "text-subtle-foreground")} />
+                          {!collapsed && <span className="truncate">{label}</span>}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
           </div>
-        )}
-        <button
-          type="button"
-          onClick={toggleSidebar}
-          className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
-          aria-label={collapsed ? "Expandir menu lateral" : "Encolher menu lateral"}
-          aria-expanded={!collapsed}
-          title={collapsed ? "Expandir menu" : "Encolher menu"}
-        >
-          {collapsed ? <PanelLeftOpen className="size-[18px]" /> : <PanelLeftClose className="size-[18px]" />}
-        </button>
-      </div>
+        </nav>
 
-      <nav className={cn("flex-1 overflow-y-auto py-4", collapsed ? "space-y-3 px-2" : "space-y-5 px-3")}>
-        {visibleGroups.map(({ group, items }, groupIndex) => (
-            <div key={group} className={cn(collapsed && groupIndex > 0 && "border-t border-border pt-3")}>
-              <p className={cn(
-                "px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-subtle-foreground",
-                collapsed && "sr-only",
-              )}>
-                {group}
-              </p>
-              <ul className="space-y-0.5">
-                {items.map((item) => {
-                  const active =
-                    item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-                  const Icon = item.icon;
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        title={collapsed ? item.label : undefined}
-                        aria-label={collapsed ? item.label : undefined}
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                          collapsed && "justify-center px-0",
-                          active
-                            ? "bg-primary-muted text-primary"
-                            : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-                        )}
-                      >
-                        <Icon className={cn("size-[18px] shrink-0", active ? "text-primary" : "text-subtle-foreground")} />
-                        {!collapsed && item.label}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-        ))}
-      </nav>
-
-      <div className={cn("border-t border-border p-3", collapsed && "hidden")}>
-        <p className="px-2 text-[11px] text-subtle-foreground">Pulso MVP · v0.1 · Maputo</p>
+        <div className={cn("shrink-0 border-t border-border px-5 pb-4 pt-3", collapsed && "hidden")}>
+          <p className="text-[11px] text-subtle-foreground">{t("nav.footer")}</p>
+        </div>
       </div>
     </aside>
   );

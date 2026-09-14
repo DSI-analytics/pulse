@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { audit } from "@/lib/audit";
 import { getAuthorizedUser } from "@/lib/auth";
 import { readStoredFile } from "@/lib/documents";
+import { getTranslator } from "@/i18n/server";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
 
@@ -16,8 +17,9 @@ import { can } from "@/lib/rbac";
 export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const { id } = await ctx.params;
   const user = await getAuthorizedUser();
+  const t = await getTranslator();
   if (!user) {
-    return Response.json({ error: "Sessão inválida." }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ error: t("clinical.documents.invalidSession") }, { status: 401, headers: { "Cache-Control": "no-store" } });
   }
   if (!can(user.role, "document.view")) {
     await audit({
@@ -31,7 +33,7 @@ export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: st
       entityId: id,
       result: "NEGADO",
     });
-    return Response.json({ error: "Sem permissão." }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ error: t("clinical.documents.noPermission") }, { status: 403, headers: { "Cache-Control": "no-store" } });
   }
 
   const attachment = await prisma.clinicalAttachment.findFirst({
@@ -39,14 +41,14 @@ export async function GET(_request: NextRequest, ctx: { params: Promise<{ id: st
     select: { id: true, name: true, mimeType: true, storageKey: true, patientId: true },
   });
   if (!attachment) {
-    return Response.json({ error: "Documento não encontrado." }, { status: 404, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ error: t("clinical.documents.notFound") }, { status: 404, headers: { "Cache-Control": "no-store" } });
   }
 
   let body: Buffer;
   try {
     body = await readStoredFile(attachment.storageKey);
   } catch {
-    return Response.json({ error: "Ficheiro indisponível." }, { status: 410, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ error: t("clinical.documents.unavailable") }, { status: 410, headers: { "Cache-Control": "no-store" } });
   }
 
   await audit({

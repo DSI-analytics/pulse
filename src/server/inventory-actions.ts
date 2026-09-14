@@ -6,6 +6,8 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { applyMovement, movingAverageCost } from "@/lib/domain/stock";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
 export interface InventoryContext {
   suppliers: { id: string; name: string }[];
@@ -35,23 +37,27 @@ export async function getInventoryContext(): Promise<InventoryContext> {
   };
 }
 
-const purchaseSchema = z.object({
-  supplierId: z.string().min(1, "Selecione o fornecedor."),
-  invoiceNumber: z.string().optional(),
-  notes: z.string().optional(),
-  received: z.boolean().default(true),
-  paid: z.boolean().default(false),
-  dueAt: z.string().optional(),
-  items: z
-    .array(
-      z.object({
-        itemId: z.string().min(1),
-        quantity: z.number().int().positive("Quantidade deve ser maior que zero."),
-        unitCost: z.number().int().nonnegative(),
-      }),
-    )
-    .min(1, "Adicione pelo menos um artigo."),
-});
+function purchaseSchema(t: Translator) {
+  return z.object({
+    supplierId: z.string().min(1, t("suppliers.newPurchase.errors.supplierRequired")),
+    invoiceNumber: z.string().optional(),
+    notes: z.string().optional(),
+    received: z.boolean().default(true),
+    paid: z.boolean().default(false),
+    dueAt: z.string().optional(),
+    items: z
+      .array(
+        z.object({
+          itemId: z.string().min(1),
+          quantity: z.number().int().positive(t("suppliers.newPurchase.errors.quantityPositive")),
+          unitCost: z.number().int().nonnegative(),
+        }),
+      )
+      .min(1, t("suppliers.newPurchase.errors.itemsRequired")),
+  });
+}
+
+export type PurchaseInput = z.input<ReturnType<typeof purchaseSchema>>;
 
 /**
  * Register a purchase. When marked as received, it atomically:
@@ -60,11 +66,12 @@ const purchaseSchema = z.object({
  *  - increases each item's stock and recomputes its moving-average cost,
  *  - books the matching expense (Contas a pagar / paga).
  */
-export async function createPurchase(input: z.input<typeof purchaseSchema>) {
+export async function createPurchase(input: PurchaseInput) {
   const user = await requireUser();
-  if (!can(user.role, "supplier.manage")) return { error: "Sem permissão para registar compras." };
+  const t = await getTranslator();
+  if (!can(user.role, "supplier.manage")) return { error: t("suppliers.newPurchase.errors.noPermission") };
 
-  const parsed = purchaseSchema.safeParse(input);
+  const parsed = purchaseSchema(t).safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const data = parsed.data;
 
@@ -72,14 +79,14 @@ export async function createPurchase(input: z.input<typeof purchaseSchema>) {
     where: { id: data.supplierId, clinicId: user.clinicId },
     select: { id: true, name: true },
   });
-  if (!supplier) return { error: "Fornecedor não encontrado." };
+  if (!supplier) return { error: t("suppliers.newPurchase.errors.supplierNotFound") };
 
   const itemIds = data.items.map((i) => i.itemId);
   const items = await prisma.inventoryItem.findMany({
     where: { id: { in: itemIds }, clinicId: user.clinicId },
     select: { id: true, currentStock: true, avgCost: true },
   });
-  if (items.length !== new Set(itemIds).size) return { error: "Artigo inválido na lista." };
+  if (items.length !== new Set(itemIds).size) return { error: t("suppliers.newPurchase.errors.invalidItem") };
   const itemMap = new Map(items.map((i) => [i.id, i]));
 
   const total = data.items.reduce((s, i) => s + i.quantity * i.unitCost, 0);
@@ -124,6 +131,7 @@ export async function createPurchase(input: z.input<typeof purchaseSchema>) {
             type: "ENTRADA",
             quantity: line.quantity,
             unitCost: line.unitCost,
+            // Texto guardado na base de dados (não se traduz).
             reason: `Receção de compra${data.invoiceNumber ? ` · ${data.invoiceNumber}` : ""}`,
             purchaseId: purchase.id,
           },
@@ -178,23 +186,28 @@ export async function createPurchase(input: z.input<typeof purchaseSchema>) {
   return { ok: true as const, id: purchaseId };
 }
 
-const movementSchema = z.object({
-  itemId: z.string().min(1, "Selecione o artigo."),
-  type: z.enum(["ENTRADA", "SAIDA", "AJUSTE", "PERDA"]),
-  quantity: z.number().int().positive("Indique uma quantidade maior que zero."),
-  reason: z.string().optional(),
-});
+function movementSchema(t: Translator) {
+  return z.object({
+    itemId: z.string().min(1, t("stock.movement.errors.itemRequired")),
+    type: z.enum(["ENTRADA", "SAIDA", "AJUSTE", "PERDA"]),
+    quantity: z.number().int().positive(t("stock.movement.errors.quantityPositive")),
+    reason: z.string().optional(),
+  });
+}
+
+export type StockMovementInput = z.input<ReturnType<typeof movementSchema>>;
 
 /**
  * Register a stock movement and keep `currentStock` consistent.
  *  ENTRADA  -> adds       SAIDA / PERDA -> subtracts (never below zero)
  *  AJUSTE   -> sets the counted stock; the signed difference is recorded.
  */
-export async function registerStockMovement(input: z.input<typeof movementSchema>) {
+export async function registerStockMovement(input: StockMovementInput) {
   const user = await requireUser();
-  if (!can(user.role, "inventory.manage")) return { error: "Sem permissão para movimentar stock." };
+  const t = await getTranslator();
+  if (!can(user.role, "inventory.manage")) return { error: t("stock.movement.errors.noPermission") };
 
-  const parsed = movementSchema.safeParse(input);
+  const parsed = movementSchema(t).safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { itemId, type, quantity, reason } = parsed.data;
 
@@ -202,15 +215,15 @@ export async function registerStockMovement(input: z.input<typeof movementSchema
     where: { id: itemId, clinicId: user.clinicId },
     select: { id: true, name: true, currentStock: true, avgCost: true, unit: true },
   });
-  if (!item) return { error: "Artigo não encontrado." };
+  if (!item) return { error: t("stock.movement.errors.itemNotFound") };
 
   const outcome = applyMovement(item.currentStock, type, quantity);
   if ("error" in outcome) {
     return {
       error:
-        outcome.error === "Stock insuficiente."
-          ? `Stock insuficiente: existem apenas ${item.currentStock} ${item.unit}.`
-          : outcome.error,
+        outcome.code === "insufficient_stock"
+          ? t("stock.movement.errors.insufficient", { stock: item.currentStock, unit: item.unit })
+          : t("stock.movement.errors.quantityPositive"),
     };
   }
   const { delta, newStock } = outcome;

@@ -19,6 +19,8 @@ import {
   summarizeDistribution,
 } from "@/lib/analytics-statistics";
 import type { AppointmentType, Prisma } from "@prisma/client";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
 const SLOTS_PER_DAY = 13; // see seed SLOTS
 
@@ -44,6 +46,7 @@ async function sumExpenses(clinicId: string, gte: Date, lte: Date): Promise<numb
 }
 
 export async function getDashboardData(clinicId: string) {
+  const t = await getTranslator();
   const now = new Date();
   const monthStart = startOfMonth(now);
   const monthEnd = endOfMonth(now);
@@ -206,7 +209,7 @@ export async function getDashboardData(clinicId: string) {
   );
   const byPlan = revByPlan
     .map((r) => ({
-      label: r.healthPlanId ? planMeta.get(r.healthPlanId) ?? "Plano" : "Particular",
+      label: r.healthPlanId ? planMeta.get(r.healthPlanId) ?? t("dashboard.plan") : t("dashboard.filters.private"),
       value: r._sum.amount ?? 0,
     }))
     .sort((a, b) => b.value - a.value);
@@ -245,12 +248,15 @@ export interface DashboardFilters {
   payer?: "private" | "insured";
 }
 
-const TYPE_LABEL: Record<AppointmentType, string> = {
-  CONSULTA: "Primeira consulta",
-  RETORNO: "Seguimento",
-  EXAME: "Exame",
-  PROCEDIMENTO: "Procedimento",
-};
+function typeLabel(t: Translator, type: AppointmentType): string {
+  return t(`dashboard.types.${type}`);
+}
+
+function genderLabel(t: Translator, gender: string | null): string {
+  return gender === "FEMININO" || gender === "MASCULINO" || gender === "OUTRO"
+    ? t(`dashboard.gender.${gender}`)
+    : t("dashboard.gender.unknown");
+}
 
 function minutesBetween(start: Date, end: Date) {
   return Math.max(0, Math.round((end.getTime() - start.getTime()) / 60_000));
@@ -261,8 +267,8 @@ function clockMinutes(value: string) {
   return hours * 60 + minutes;
 }
 
-function ageBand(birthDate: Date | null, at: Date) {
-  if (!birthDate) return "Não registada";
+function ageBand(t: Translator, birthDate: Date | null, at: Date) {
+  if (!birthDate) return t("dashboard.ageUnknown");
   const age = differenceInYears(at, birthDate);
   if (age < 18) return "0–17";
   if (age < 35) return "18–34";
@@ -300,6 +306,7 @@ export async function getGroupedDashboardData(
   filters: DashboardFilters,
   { includeFinancials = true }: { includeFinancials?: boolean } = {},
 ) {
+  const t = await getTranslator();
   const { from, to, doctorId, specialtyId, appointmentType, payer } = filters;
   const durationMs = Math.max(0, to.getTime() - from.getTime());
   const previousTo = new Date(from.getTime() - 1);
@@ -436,7 +443,7 @@ export async function getGroupedDashboardData(
   const diagnoses = countLabels(clinicalRecords.flatMap((record) => record.diagnosis?.trim() ? [record.diagnosis.trim()] : [])).slice(0, 10);
   const revenueSpecialtyMap = new Map<string, { label: string; value: number; color: string }>();
   for (const item of revenues) {
-    const label = item.specialty?.name ?? "Sem especialidade";
+    const label = item.specialty?.name ?? t("dashboard.noSpecialty");
     const current = revenueSpecialtyMap.get(label) ?? { label, value: 0, color: item.specialty?.color ?? "#0C7C74" };
     current.value += item.amount;
     revenueSpecialtyMap.set(label, current);
@@ -463,9 +470,9 @@ export async function getGroupedDashboardData(
       completedDeltaPct: previousCompleted ? percentage(completedDelta, previousCompleted) : null,
       completedYoYPct: priorYearCompleted ? percentage(completed.length - priorYearCompleted, priorYearCompleted) : null,
       movingAverage7d: Math.round((trailingCompleted / trailingDays) * 10) / 10,
-      byType: countLabels(scheduled.map((item) => TYPE_LABEL[item.type])),
-      byGender: countLabels([...uniquePatients.values()].map((patient) => patient.gender === "FEMININO" ? "Feminino" : patient.gender === "MASCULINO" ? "Masculino" : patient.gender === "OUTRO" ? "Outro" : "Não registado")),
-      byAge: countLabels([...uniquePatients.values()].map((patient) => ageBand(patient.birthDate, to))),
+      byType: countLabels(scheduled.map((item) => typeLabel(t, item.type))),
+      byGender: countLabels([...uniquePatients.values()].map((patient) => genderLabel(t, patient.gender))),
+      byAge: countLabels([...uniquePatients.values()].map((patient) => ageBand(t, patient.birthDate, to))),
       wait,
     },
     care: {
@@ -505,8 +512,8 @@ export async function getGroupedDashboardData(
       revenuePerPatient: uniquePatients.size ? Math.round(totalRevenue / uniquePatients.size) : 0,
       costPerAttendance: costsScoped && completed.length ? Math.round(totalExpenses / completed.length) : null,
       payerMix: [
-        { label: "Particular", value: privateRevenue },
-        { label: "Seguradora / convénio", value: insuredRevenue },
+        { label: t("dashboard.filters.private"), value: privateRevenue },
+        { label: t("dashboard.filters.insured"), value: insuredRevenue },
       ].filter((item) => item.value > 0),
       bySpecialty: [...revenueSpecialtyMap.values()].sort((a, b) => b.value - a.value),
       overdueInvoices: overdueInvoices.length,

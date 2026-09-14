@@ -1,8 +1,11 @@
 import "server-only";
 import { startOfMonth, endOfMonth, subMonths, format } from "date-fns";
 import { prisma } from "@/lib/prisma";
+import { getTranslator } from "@/i18n/server";
+import type { MessageKey } from "@/i18n/types";
 import type { ExpenseStatus, RevenueSource } from "@prisma/client";
 
+/** Rótulos PT legados (mantidos para compatibilidade); a UI usa `charts.paymentMethods.*`. */
 const PAYMENT_LABEL: Record<string, string> = {
   DINHEIRO: "Dinheiro",
   MPESA: "M-Pesa",
@@ -22,6 +25,7 @@ export interface FinanceListFilters {
 }
 
 export async function getFinanceData(clinicId: string, filters: FinanceListFilters = {}) {
+  const t = await getTranslator();
   const now = new Date();
   const mStart = startOfMonth(now);
   const mEnd = endOfMonth(now);
@@ -86,7 +90,10 @@ export async function getFinanceData(clinicId: string, filters: FinanceListFilte
   const resultTrend = revenueTrend.map((r, i) => ({ label: r.label, value: r.value - expenseTrend[i].value }));
 
   const byPaymentMethod = byMethod
-    .map((m) => ({ label: PAYMENT_LABEL[m.method] ?? m.method, value: m._sum.amount ?? 0 }))
+    .map((m) => ({
+      label: m.method in PAYMENT_LABEL ? t(`charts.paymentMethods.${m.method}` as MessageKey) : m.method,
+      value: m._sum.amount ?? 0,
+    }))
     .sort((a, b) => b.value - a.value);
 
   return {

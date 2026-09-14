@@ -15,7 +15,17 @@ export function Avatar({ name, className, color }: AvatarProps) {
         "size-8 bg-primary-muted text-primary",
         className,
       )}
-      style={color ? { backgroundColor: `${color}1a`, color } : undefined}
+      // color-mix funciona com qualquer formato de cor (HEX antigo ou OKLCH) e
+      // mistura em OKLCH: fundo com 14% da cor sobre o cartão e texto puxado
+      // para o primeiro plano, para manter contraste ≥ 4,5:1 nos dois temas.
+      style={
+        color
+          ? {
+              backgroundColor: `color-mix(in oklch, ${color} 14%, var(--card))`,
+              color: `color-mix(in oklch, ${color} 62%, var(--foreground))`,
+            }
+          : undefined
+      }
       aria-hidden
     >
       {toInitials(name)}

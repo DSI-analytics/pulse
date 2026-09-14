@@ -8,21 +8,25 @@ import { CadastroButton } from "@/components/cadastro-form";
 import { TableRecordCrudCell } from "@/components/table-record-crud-cell";
 import { createInventoryItemRecord, deleteInventoryItemRecord, updateInventoryItemRecord } from "@/server/crud-actions";
 import { MovimentoStock } from "@/components/movimento-stock";
-import { formatDateTimePt } from "@/lib/datetime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { formatMZN } from "@/lib/money";
-import { formatDateShort } from "@/lib/datetime";
 import { ListFilters } from "@/components/list-filters";
+import { getFormatters, getTranslator } from "@/i18n/server";
 
 function daysUntil(date: Date | null): number | null {
   if (!date) return null;
   return Math.round((date.getTime() - Date.now()) / 86400000);
 }
 
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("stock.title") };
+}
+
 export default async function StockPage({ searchParams }: { searchParams: Promise<{ q?: string; categoria?: string; estado?: string }> }) {
   const user = await requirePermission("inventory.view");
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
   const sp = await searchParams;
   const query = (sp.q ?? "").trim().toLocaleLowerCase("pt");
   const [allItems, categories, movements] = await Promise.all([
@@ -55,38 +59,38 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
   const alerts: { icon: LucideIcon; tone: "danger" | "warning"; text: string }[] = [];
   for (const i of allItems) {
     const dLeft = i.avgDailyConsumption > 0 ? Math.round(i.currentStock / i.avgDailyConsumption) : null;
-    if (i.currentStock === 0) alerts.push({ icon: PackageX, tone: "danger", text: `${i.name} esgotado.` });
+    if (i.currentStock === 0) alerts.push({ icon: PackageX, tone: "danger", text: t("stock.alerts.outOfStock", { name: i.name }) });
     else if (i.currentStock < i.minStock)
-      alerts.push({ icon: AlertTriangle, tone: "warning", text: `${i.name} abaixo do stock mínimo (${i.currentStock}/${i.minStock}).` });
+      alerts.push({ icon: AlertTriangle, tone: "warning", text: t("stock.alerts.belowMin", { name: i.name, current: i.currentStock, min: i.minStock }) });
     const exp = daysUntil(i.expiryDate);
     if (exp !== null && exp <= 30)
-      alerts.push({ icon: CalendarClock, tone: exp <= 15 ? "danger" : "warning", text: `${i.name} expira em ${exp} dias.` });
+      alerts.push({ icon: CalendarClock, tone: exp <= 15 ? "danger" : "warning", text: t("stock.alerts.expires", { name: i.name, days: exp }) });
     if (dLeft !== null && dLeft <= 8 && i.currentStock > 0)
-      alerts.push({ icon: AlertTriangle, tone: "warning", text: `Stock de ${i.name} deverá terminar em ~${dLeft} dias ao ritmo atual.` });
+      alerts.push({ icon: AlertTriangle, tone: "warning", text: t("stock.alerts.runningOut", { name: i.name, days: dLeft }) });
   }
 
   return (
     <>
       <PageHeader
-        eyebrow="Gestão"
-        title="Stock"
-        description={`${allItems.length} artigos · materiais clínicos e operacionais`}
+        eyebrow={t("stock.eyebrow")}
+        title={t("stock.title")}
+        description={t("stock.description", { count: allItems.length })}
         actions={
           canManage ? (
             <>
             <MovimentoStock items={stockOptions} />
             <CadastroButton
-              label="Novo artigo"
-              title="Novo artigo de stock"
+              label={t("stock.newItem")}
+              title={t("stock.newItemTitle")}
               action={createInventoryItemRecord}
               fields={[
-                { name: "name", label: "Artigo", required: true, full: true, placeholder: "Ex.: Luvas de nitrilo tam. M" },
-                { name: "sku", label: "SKU", required: true, placeholder: "LUV-M" },
-                { name: "categoryId", label: "Categoria", type: "select", options: categories.map((c) => ({ value: c.id, label: c.name })) },
-                { name: "unit", label: "Unidade", defaultValue: "un", placeholder: "caixa" },
-                { name: "currentStock", label: "Stock atual", type: "number", defaultValue: "0" },
-                { name: "minStock", label: "Stock mínimo", type: "number", defaultValue: "0" },
-                { name: "purchasePrice", label: "Custo unitário", type: "money", suffix: "MZN", placeholder: "850" },
+                { name: "name", label: t("stock.fields.name"), required: true, full: true, placeholder: t("stock.fields.namePlaceholder") },
+                { name: "sku", label: t("stock.fields.sku"), required: true, placeholder: "LUV-M" },
+                { name: "categoryId", label: t("stock.fields.category"), type: "select", options: categories.map((c) => ({ value: c.id, label: c.name })) },
+                { name: "unit", label: t("stock.fields.unit"), defaultValue: "un", placeholder: t("stock.fields.unitPlaceholder") },
+                { name: "currentStock", label: t("stock.fields.currentStock"), type: "number", defaultValue: "0" },
+                { name: "minStock", label: t("stock.fields.minStock"), type: "number", defaultValue: "0" },
+                { name: "purchasePrice", label: t("stock.fields.unitCost"), type: "money", suffix: f.currency, placeholder: "850" },
               ]}
             />
             </>
@@ -95,14 +99,14 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
       />
 
       <ListFilters action="/stock" fields={[
-        { name: "q", label: "Pesquisar", value: sp.q?.trim(), type: "search", placeholder: "Artigo ou SKU…" },
-        { name: "categoria", label: "Categoria", value: sp.categoria, options: categories.map((category) => ({ value: category.id, label: category.name })) },
-        { name: "estado", label: "Estado", value: sp.estado, options: [{ value: "ok", label: "OK" }, { value: "baixo", label: "Stock baixo" }, { value: "esgotado", label: "Esgotado" }, { value: "expira", label: "A expirar" }] },
+        { name: "q", label: t("stock.filters.search"), value: sp.q?.trim(), type: "search", placeholder: t("stock.filters.searchPlaceholder") },
+        { name: "categoria", label: t("stock.filters.category"), value: sp.categoria, options: categories.map((category) => ({ value: category.id, label: category.name })) },
+        { name: "estado", label: t("stock.filters.status"), value: sp.estado, options: [{ value: "ok", label: t("stock.filters.ok") }, { value: "baixo", label: t("stock.filters.low") }, { value: "esgotado", label: t("stock.filters.out") }, { value: "expira", label: t("stock.filters.expiring") }] },
       ]} />
 
       {alerts.length > 0 && (
-        <Card className="border-warning/30 bg-warning-muted/30">
-          <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-warning"><AlertTriangle className="size-4" /> Alertas de stock ({alerts.length})</CardTitle></CardHeader>
+        <Card className="bg-warning-muted [--card-border:var(--warning-edge)]">
+          <CardHeader className="pb-2"><CardTitle className="flex items-center gap-2 text-warning"><AlertTriangle className="size-4" /> {t("stock.alerts.title", { count: alerts.length })}</CardTitle></CardHeader>
           <CardContent className="pt-0">
             <ul className="grid gap-1.5 sm:grid-cols-2">
               {alerts.slice(0, 8).map((a, i) => (
@@ -121,15 +125,15 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Artigo</TableHead>
-                <TableHead>SKU</TableHead>
-                <TableHead>Categoria</TableHead>
-                <TableHead className="text-right">Stock</TableHead>
-                <TableHead className="text-right">Mínimo</TableHead>
-                <TableHead className="text-right">Custo unit.</TableHead>
-                <TableHead>Validade</TableHead>
-                <TableHead>Estado</TableHead>
-                {canManage && <TableHead className="text-right">Ações</TableHead>}
+                <TableHead>{t("stock.columns.item")}</TableHead>
+                <TableHead>{t("stock.columns.sku")}</TableHead>
+                <TableHead>{t("stock.columns.category")}</TableHead>
+                <TableHead className="text-right">{t("stock.columns.stock")}</TableHead>
+                <TableHead className="text-right">{t("stock.columns.min")}</TableHead>
+                <TableHead className="text-right">{t("stock.columns.unitCost")}</TableHead>
+                <TableHead>{t("stock.columns.expiry")}</TableHead>
+                <TableHead>{t("stock.columns.status")}</TableHead>
+                {canManage && <TableHead className="text-right">{t("stock.actions")}</TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -137,12 +141,12 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                 const exp = daysUntil(i.expiryDate);
                 const status =
                   i.currentStock === 0
-                    ? { label: "Esgotado", variant: "danger" as const }
+                    ? { label: t("stock.status.out"), variant: "danger" as const }
                     : i.currentStock < i.minStock
-                      ? { label: "Baixo", variant: "warning" as const }
+                      ? { label: t("stock.status.low"), variant: "warning" as const }
                       : exp !== null && exp <= 30
-                        ? { label: "Expira", variant: "warning" as const }
-                        : { label: "OK", variant: "success" as const };
+                        ? { label: t("stock.status.expiring"), variant: "warning" as const }
+                        : { label: t("stock.status.ok"), variant: "success" as const };
                 return (
                   <TableRow key={i.id}>
                     <TableCell className="font-medium">{i.name}</TableCell>
@@ -150,24 +154,24 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                     <TableCell className="text-[13px] text-muted-foreground">{i.category?.name ?? "—"}</TableCell>
                     <TableCell className="text-right tabular">{i.currentStock} {i.unit}</TableCell>
                     <TableCell className="text-right tabular text-muted-foreground">{i.minStock}</TableCell>
-                    <TableCell className="text-right tabular">{formatMZN(i.avgCost)}</TableCell>
-                    <TableCell className="text-[13px] text-muted-foreground">{i.expiryDate ? formatDateShort(i.expiryDate) : "—"}</TableCell>
+                    <TableCell className="text-right tabular">{f.money(i.avgCost)}</TableCell>
+                    <TableCell className="text-[13px] text-muted-foreground">{i.expiryDate ? f.date(i.expiryDate) : "—"}</TableCell>
                     <TableCell><Badge variant={status.variant}>{status.label}</Badge></TableCell>
                     {canManage && (
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <TableRecordCrudCell
                             id={i.id}
-                            title="Editar artigo"
-                            description="Atualize o artigo do stock."
+                            title={t("stock.editItem")}
+                            description={t("stock.editItemDescription")}
                             fields={[
-                              { name: "name", label: "Artigo", required: true, defaultValue: i.name },
-                              { name: "sku", label: "SKU", required: true, defaultValue: i.sku },
-                              { name: "categoryId", label: "Categoria", type: "select", defaultValue: i.categoryId ?? "", options: categories.map((c) => ({ value: c.id, label: c.name })) },
-                              { name: "unit", label: "Unidade", defaultValue: i.unit },
-                              { name: "currentStock", label: "Stock atual", type: "number", defaultValue: String(i.currentStock) },
-                              { name: "minStock", label: "Stock mínimo", type: "number", defaultValue: String(i.minStock) },
-                              { name: "purchasePrice", label: "Custo unitário", type: "money", defaultValue: String(i.avgCost), suffix: "MZN" },
+                              { name: "name", label: t("stock.fields.name"), required: true, defaultValue: i.name },
+                              { name: "sku", label: t("stock.fields.sku"), required: true, defaultValue: i.sku },
+                              { name: "categoryId", label: t("stock.fields.category"), type: "select", defaultValue: i.categoryId ?? "", options: categories.map((c) => ({ value: c.id, label: c.name })) },
+                              { name: "unit", label: t("stock.fields.unit"), defaultValue: i.unit },
+                              { name: "currentStock", label: t("stock.fields.currentStock"), type: "number", defaultValue: String(i.currentStock) },
+                              { name: "minStock", label: t("stock.fields.minStock"), type: "number", defaultValue: String(i.minStock) },
+                              { name: "purchasePrice", label: t("stock.fields.unitCost"), type: "money", defaultValue: String(i.avgCost), suffix: f.currency },
                             ]}
                             updateAction={updateInventoryItemRecord}
                             deleteAction={deleteInventoryItemRecord}
@@ -182,36 +186,36 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
                   </TableRow>
                 );
               })}
-              {items.length === 0 && <TableRow><TableCell colSpan={canManage ? 9 : 8} className="py-8 text-center text-sm text-muted-foreground">Nenhum artigo corresponde aos filtros.</TableCell></TableRow>}
+              {items.length === 0 && <TableRow><TableCell colSpan={canManage ? 9 : 8} className="py-8 text-center text-sm text-muted-foreground">{t("stock.empty")}</TableCell></TableRow>}
             </TableBody>
           </Table>
         </CardContent>
       </Card>
 
       <Card>
-        <CardHeader className="pb-2"><CardTitle>Movimentos recentes</CardTitle></CardHeader>
+        <CardHeader className="pb-2"><CardTitle>{t("stock.movements.title")}</CardTitle></CardHeader>
         <CardContent className="pt-0">
           {movements.length === 0 ? (
-            <p className="py-3 text-sm text-muted-foreground">Ainda não há movimentos registados.</p>
+            <p className="py-3 text-sm text-muted-foreground">{t("stock.movements.empty")}</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Artigo</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="text-right">Quantidade</TableHead>
-                  <TableHead>Motivo</TableHead>
+                  <TableHead>{t("stock.movements.columns.date")}</TableHead>
+                  <TableHead>{t("stock.movements.columns.item")}</TableHead>
+                  <TableHead>{t("stock.movements.columns.type")}</TableHead>
+                  <TableHead className="text-right">{t("stock.movements.columns.quantity")}</TableHead>
+                  <TableHead>{t("stock.movements.columns.reason")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {movements.map((m) => (
                   <TableRow key={m.id}>
-                    <TableCell className="text-[13px] text-muted-foreground">{formatDateTimePt(m.createdAt)}</TableCell>
+                    <TableCell className="text-[13px] text-muted-foreground">{f.dateTime(m.createdAt)}</TableCell>
                     <TableCell className="font-medium">{m.item.name}</TableCell>
                     <TableCell>
                       <Badge variant={m.quantity >= 0 ? "success" : m.type === "PERDA" ? "danger" : "warning"}>
-                        {MOVEMENT_LABEL[m.type]}
+                        {t(`stock.movementType.${m.type}`)}
                       </Badge>
                     </TableCell>
                     <TableCell className={`text-right font-medium tabular ${m.quantity >= 0 ? "text-success" : "text-danger"}`}>
@@ -228,10 +232,3 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
     </>
   );
 }
-
-const MOVEMENT_LABEL: Record<string, string> = {
-  ENTRADA: "Entrada",
-  SAIDA: "Saída",
-  AJUSTE: "Ajuste",
-  PERDA: "Perda",
-};

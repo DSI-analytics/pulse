@@ -11,9 +11,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatDateShort } from "@/lib/datetime";
 import { ListFilters } from "@/components/list-filters";
 import { patientSearchWhere } from "@/server/patient-search";
+import { getFormatters, getTranslator } from "@/i18n/server";
+
+const GENDERS = ["FEMININO", "MASCULINO", "OUTRO"] as const;
+
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("nav.patients") };
+}
 
 export default async function PacientesPage({
   searchParams,
@@ -21,9 +28,10 @@ export default async function PacientesPage({
   searchParams: Promise<{ q?: string; cobertura?: string; genero?: string; estado?: string; pagina?: string }>;
 }) {
   const user = await requirePermission("patient.view");
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
   const { q, cobertura, genero, estado, pagina } = await searchParams;
   const query = (q ?? "").trim();
-  const gender = ["FEMININO", "MASCULINO", "OUTRO"].includes(genero ?? "") ? genero as "FEMININO" | "MASCULINO" | "OUTRO" : undefined;
+  const gender = (GENDERS as readonly string[]).includes(genero ?? "") ? genero as (typeof GENDERS)[number] : undefined;
   const includeInactive = estado === "inactivos" || estado === "todos";
   const page = Math.max(1, Number.parseInt(pagina ?? "1", 10) || 1);
   const pageSize = 50;
@@ -67,30 +75,30 @@ export default async function PacientesPage({
     return qs ? `/pacientes?${qs}` : "/pacientes";
   };
 
+  const genderOptions = GENDERS.map((value) => ({ value, label: t(`patients.gender.${value}`) }));
+
   return (
     <>
       <PageHeader
-        eyebrow="Operação"
-        title="Pacientes"
-        description={`${total.toLocaleString("pt-PT")} pacientes registados`}
+        eyebrow={t("nav.groups.operation")}
+        title={t("nav.patients")}
+        description={t("patients.list.count", { count: f.number(total) })}
         actions={
           can(user.role, "patient.manage") ? (
             <CadastroButton
-              label="Novo paciente"
-              title="Novo paciente"
-              description="Registe um novo paciente na clínica."
+              label={t("patients.list.newPatient")}
+              title={t("patients.list.newPatient")}
+              description={t("patients.list.newPatientDescription")}
               action={createPatientRecord}
               fields={[
-                { name: "name", label: "Nome completo", required: true, full: true, placeholder: "Ex.: Ana Machava" },
-                { name: "phone", label: "Telefone", type: "tel", placeholder: "84…" },
-                { name: "birthDate", label: "Data de nascimento", type: "date" },
-                { name: "gender", label: "Género", type: "select", options: [
-                  { value: "FEMININO", label: "Feminino" }, { value: "MASCULINO", label: "Masculino" }, { value: "OUTRO", label: "Outro" },
-                ] },
-                { name: "email", label: "Email", type: "email" },
-                { name: "address", label: "Morada", full: true },
-                { name: "emergencyContactName", label: "Contacto de emergência" },
-                { name: "emergencyContactPhone", label: "Tel. de emergência", type: "tel" },
+                { name: "name", label: t("patients.fields.name"), required: true, full: true, placeholder: t("patients.fields.namePlaceholder") },
+                { name: "phone", label: t("patients.fields.phone"), type: "tel", placeholder: t("patients.fields.phonePlaceholder") },
+                { name: "birthDate", label: t("patients.fields.birthDate"), type: "date" },
+                { name: "gender", label: t("patients.fields.gender"), type: "select", options: genderOptions },
+                { name: "email", label: t("patients.fields.email"), type: "email" },
+                { name: "address", label: t("patients.fields.address"), full: true },
+                { name: "emergencyContactName", label: t("patients.fields.emergencyContact") },
+                { name: "emergencyContactPhone", label: t("patients.fields.emergencyPhone"), type: "tel" },
               ]}
             />
           ) : undefined
@@ -98,27 +106,27 @@ export default async function PacientesPage({
       />
 
       <ListFilters action="/pacientes" fields={[
-        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome, nº, telefone, email, documento ou data de nascimento…" },
-        { name: "cobertura", label: "Cobertura", value: cobertura, options: [{ value: "plano", label: "Com plano" }, { value: "particular", label: "Particular" }] },
-        { name: "genero", label: "Género", value: gender, options: [{ value: "FEMININO", label: "Feminino" }, { value: "MASCULINO", label: "Masculino" }, { value: "OUTRO", label: "Outro" }] },
-        { name: "estado", label: "Estado", value: estado, options: [{ value: "inactivos", label: "Inactivos" }, { value: "todos", label: "Todos" }] },
+        { name: "q", label: t("patients.list.search"), value: query, type: "search", placeholder: t("patients.list.searchPlaceholder") },
+        { name: "cobertura", label: t("patients.list.coverage"), value: cobertura, options: [{ value: "plano", label: t("patients.list.withPlan") }, { value: "particular", label: t("patients.private") }] },
+        { name: "genero", label: t("patients.fields.gender"), value: gender, options: genderOptions },
+        { name: "estado", label: t("patients.list.status"), value: estado, options: [{ value: "inactivos", label: t("patients.list.inactiveFilter") }, { value: "todos", label: t("patients.list.all") }] },
       ]} />
 
       <Card>
         {patients.length === 0 ? (
           <div className="p-6">
-            <EmptyState icon={Users} title="Nenhum paciente encontrado" description="Ajuste a pesquisa ou registe um novo paciente através de + Nova Marcação." />
+            <EmptyState icon={Users} title={t("patients.list.emptyTitle")} description={t("patients.list.emptyDescription")} />
           </div>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Paciente</TableHead>
-                <TableHead>Nº</TableHead>
-                <TableHead>Telefone</TableHead>
-                <TableHead>Plano</TableHead>
-                <TableHead className="text-right">Consultas</TableHead>
-                <TableHead>Registo</TableHead>
+                <TableHead>{t("patients.list.columns.patient")}</TableHead>
+                <TableHead>{t("patients.list.columns.code")}</TableHead>
+                <TableHead>{t("patients.list.columns.phone")}</TableHead>
+                <TableHead>{t("patients.list.columns.plan")}</TableHead>
+                <TableHead className="text-right">{t("patients.list.columns.consultations")}</TableHead>
+                <TableHead>{t("patients.list.columns.registered")}</TableHead>
                 <TableHead></TableHead>
               </TableRow>
             </TableHeader>
@@ -129,20 +137,20 @@ export default async function PacientesPage({
                     <Link href={`/pacientes/${p.id}`} className="flex items-center gap-2.5">
                       <Avatar name={p.name} className="size-8" />
                       <span className="font-medium">{p.name}</span>
-                      {!p.isActive && <Badge variant="neutral">Inactivo</Badge>}
+                      {!p.isActive && <Badge variant="neutral">{t("common.inactive")}</Badge>}
                     </Link>
                   </TableCell>
-                  <TableCell className="font-mono text-[13px] text-muted-foreground">{p.code}</TableCell>
-                  <TableCell className="text-[13px]">{p.phone ?? "—"}</TableCell>
+                  <TableCell className="whitespace-nowrap font-mono text-[13px] text-muted-foreground">{p.code}</TableCell>
+                  <TableCell className="whitespace-nowrap text-[13px] tabular">{p.phone ?? "—"}</TableCell>
                   <TableCell>
                     {p.healthPlans[0] ? (
                       <Badge variant="info">{p.healthPlans[0].healthPlan.insuranceCompany.name}</Badge>
                     ) : (
-                      <Badge variant="neutral">Particular</Badge>
+                      <Badge variant="neutral">{t("patients.private")}</Badge>
                     )}
                   </TableCell>
                   <TableCell className="text-right tabular">{p._count.appointments}</TableCell>
-                  <TableCell className="text-[13px] text-muted-foreground">{formatDateShort(p.registeredAt)}</TableCell>
+                  <TableCell className="whitespace-nowrap text-[13px] text-muted-foreground tabular">{f.date(p.registeredAt)}</TableCell>
                   <TableCell className="text-right">
                     <Link href={`/pacientes/${p.id}`} className="inline-flex text-subtle-foreground hover:text-foreground">
                       <ChevronRight className="size-4" />
@@ -156,19 +164,19 @@ export default async function PacientesPage({
       </Card>
 
       {totalPages > 1 && (
-        <nav className="flex items-center justify-between gap-3 text-sm" aria-label="Paginação de pacientes">
+        <nav className="flex items-center justify-between gap-3 text-sm" aria-label={t("patients.list.paginationLabel")}>
           <span className="text-muted-foreground">
-            Página {page} de {totalPages} · {total.toLocaleString("pt-PT")} resultados
+            {t("patients.list.pageSummary", { page, totalPages, total: f.number(total) })}
           </span>
           <div className="flex gap-2">
             {page > 1 && (
               <Link href={pageHref(page - 1)} className="rounded-md border border-border px-3 py-1.5 hover:bg-surface-2">
-                Anterior
+                {t("patients.list.previous")}
               </Link>
             )}
             {page < totalPages && (
               <Link href={pageHref(page + 1)} className="rounded-md border border-border px-3 py-1.5 hover:bg-surface-2">
-                Seguinte
+                {t("patients.list.next")}
               </Link>
             )}
           </div>

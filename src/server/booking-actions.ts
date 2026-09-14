@@ -9,6 +9,7 @@ import { can } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { generateDaySlots, hasConflict, type WeeklyRule } from "@/lib/domain/availability";
 import { CLINIC_TZ } from "@/lib/datetime";
+import { getTranslator } from "@/i18n/server";
 
 export interface BookingContext {
   specialties: { id: string; name: string; color: string }[];
@@ -86,14 +87,14 @@ export async function searchPatients(query: string) {
   });
 }
 
-const quickPatientSchema = z.object({
-  name: z.string().min(3, "Nome demasiado curto"),
-  phone: z.string().min(6, "Telefone inválido").optional().or(z.literal("")),
-});
-
 export async function quickCreatePatient(input: { name: string; phone?: string }) {
   const user = await requireUser();
-  if (!can(user.role, "patient.manage")) return { error: "Sem permissão." };
+  const t = await getTranslator();
+  if (!can(user.role, "patient.manage")) return { error: t("agenda.booking.errors.noPermission") };
+  const quickPatientSchema = z.object({
+    name: z.string().min(3, t("agenda.booking.errors.nameTooShort")),
+    phone: z.string().min(6, t("agenda.booking.errors.invalidPhone")).optional().or(z.literal("")),
+  });
   const parsed = quickPatientSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
@@ -135,6 +136,7 @@ export async function getDoctorAvailability(
   date: string,
 ): Promise<{ error: string } | { slots: { start: string; label: string }[] }> {
   const user = await requireUser();
+  const t = await getTranslator();
 
   const doctor = await prisma.doctor.findFirst({
     where: { id: doctorId, clinicId: user.clinicId },
@@ -153,10 +155,10 @@ export async function getDoctorAvailability(
     },
   });
 
-  if (!doctor) return { error: "Médico não encontrado." };
+  if (!doctor) return { error: t("agenda.booking.errors.doctorNotFound") };
 
   const target = fromZonedTime(`${date}T00:00:00`, CLINIC_TZ);
-  if (Number.isNaN(target.getTime())) return { error: "Data inválida." };
+  if (Number.isNaN(target.getTime())) return { error: t("agenda.booking.errors.invalidDate") };
 
   const rule = doctor.schedules.find((s) => s.weekday === toZonedTime(target, CLINIC_TZ).getDay()) as WeeklyRule | undefined;
   const dayStart = target;
@@ -198,7 +200,8 @@ export async function getDoctorAvailability(
 
 export async function createAppointment(input: z.input<typeof createSchema>) {
   const user = await requireUser();
-  if (!can(user.role, "appointment.manage")) return { error: "Sem permissão para marcar." };
+  const t = await getTranslator();
+  if (!can(user.role, "appointment.manage")) return { error: t("agenda.booking.errors.noPermissionBook") };
 
   const parsed = createSchema.safeParse(input);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
@@ -208,19 +211,19 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
     where: { id: data.doctorId, clinicId: user.clinicId },
     select: { id: true, specialtyId: true, consultationPrice: true, consultationDuration: true },
   });
-  if (!doctor) return { error: "Médico não encontrado." };
+  if (!doctor) return { error: t("agenda.booking.errors.doctorNotFound") };
 
   const patient = await prisma.patient.findFirst({
     where: { id: data.patientId, clinicId: user.clinicId },
     select: { id: true },
   });
-  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient) return { error: t("agenda.booking.errors.patientNotFound") };
 
   const startAt = new Date(data.startAt);
-  if (Number.isNaN(startAt.getTime())) return { error: "Data/hora inválida." };
+  if (Number.isNaN(startAt.getTime())) return { error: t("agenda.booking.errors.invalidDateTime") };
   // No booking in the past (allow a 2-minute grace for clock skew).
   if (startAt.getTime() < Date.now() - 2 * 60_000) {
-    return { error: "Não é possível agendar numa data/hora passada." };
+    return { error: t("agenda.booking.errors.pastDate") };
   }
   const endAt = addMinutes(startAt, doctor.consultationDuration);
   const clinicStart = toZonedTime(startAt, CLINIC_TZ);
@@ -253,7 +256,7 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
   const busy = sameDayBusy.map((b) => ({ start: b.startAt, end: b.endAt }));
 
   if (hasConflict(busy, startAt, endAt)) {
-    return { error: "Conflito de horário: o médico já tem uma marcação nesse período." };
+    return { error: t("agenda.booking.errors.conflict") };
   }
 
   const daySlots = generateDaySlots(
@@ -270,19 +273,19 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
 
   const slotMatches = daySlots.some((slot) => slot.start.getTime() === startAt.getTime());
   if (!slotMatches) {
-    return { error: "O médico não está disponível nesse dia e horário." };
+    return { error: t("agenda.booking.errors.doctorUnavailable") };
   }
 
   // An exam / procedure must say which one, and its price drives the quote.
   let serviceId: string | null = null;
   let servicePrice: number | null = null;
   if (data.type === "EXAME" || data.type === "PROCEDIMENTO") {
-    if (!data.serviceId) return { error: "Indique qual o exame/procedimento a efectuar." };
+    if (!data.serviceId) return { error: t("agenda.booking.errors.serviceRequired") };
     const service = await prisma.service.findFirst({
       where: { id: data.serviceId, clinicId: user.clinicId },
       select: { id: true, basePrice: true },
     });
-    if (!service) return { error: "Exame/serviço inválido." };
+    if (!service) return { error: t("agenda.booking.errors.invalidService") };
     serviceId = service.id;
     servicePrice = service.basePrice;
   }

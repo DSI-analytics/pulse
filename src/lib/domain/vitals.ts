@@ -4,6 +4,9 @@
 // fora do habitual num adulto. Não constituem diagnóstico nem substituem a
 // avaliação do profissional.
 
+import pt from "../../i18n/messages/pt";
+import { createTranslator, type Translator } from "../../i18n/translate";
+
 export interface VitalsInput {
   systolic?: number | null;
   diastolic?: number | null;
@@ -132,17 +135,26 @@ export const VITAL_UNIT: Record<VitalKey, string> = {
   painScore: "/10",
 };
 
+/** Tradutor por omissão (português), para chamadores sem contexto de idioma. */
+const defaultT: Translator = createTranslator(pt);
+
 /**
  * Valida e normaliza um valor introduzido. Devolve `null` para vazio e lança
- * quando está fora dos limites fisicamente plausíveis.
+ * quando está fora dos limites fisicamente plausíveis. A mensagem do erro vem
+ * no idioma de `t` (português por omissão).
  */
-export function parseVital(key: VitalKey, raw: string | number | null | undefined): number | null {
+export function parseVital(
+  key: VitalKey,
+  raw: string | number | null | undefined,
+  t: Translator = defaultT,
+): number | null {
   if (raw === null || raw === undefined || raw === "") return null;
   const value = typeof raw === "number" ? raw : Number(String(raw).replace(",", "."));
-  if (!Number.isFinite(value)) throw new Error(`${VITAL_LABEL[key]}: valor inválido.`);
+  const label = t(`clinical.vitals.labels.${key}`);
+  if (!Number.isFinite(value)) throw new Error(t("clinical.vitals.invalidValue", { label }));
   const [min, max] = VITAL_LIMITS[key];
   if (value < min || value > max) {
-    throw new Error(`${VITAL_LABEL[key]}: valor fora dos limites aceites (${min}–${max} ${VITAL_UNIT[key]}).`);
+    throw new Error(t("clinical.vitals.outOfLimits", { label, min, max, unit: VITAL_UNIT[key] }));
   }
   return Math.round(value * 100) / 100;
 }

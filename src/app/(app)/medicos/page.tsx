@@ -8,11 +8,29 @@ import { PageHeader } from "@/components/page-header";
 import { CadastroButton } from "@/components/cadastro-form";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
-import { formatMZN } from "@/lib/money";
 import { ListFilters } from "@/components/list-filters";
+import { getFormatters, getTranslator } from "@/i18n/server";
+
+/** Mesma paleta OKLCH de src/components/settings/specialty-manager.tsx. */
+const SPECIALTY_PALETTE = [
+  { key: "teal", value: "oklch(55% 0.11 182)" },
+  { key: "blue", value: "oklch(54% 0.15 250)" },
+  { key: "indigo", value: "oklch(50% 0.16 275)" },
+  { key: "violet", value: "oklch(54% 0.18 305)" },
+  { key: "pink", value: "oklch(58% 0.2 350)" },
+  { key: "red", value: "oklch(56% 0.2 28)" },
+  { key: "amber", value: "oklch(68% 0.16 65)" },
+  { key: "green", value: "oklch(56% 0.14 150)" },
+] as const;
+
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("doctors.title") };
+}
 
 export default async function MedicosPage({ searchParams }: { searchParams: Promise<{ q?: string; especialidade?: string }> }) {
   const user = await requirePermission("doctor.view");
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
   const canViewFinancials = can(user.role, "finance.view");
   const sp = await searchParams;
   const query = (sp.q ?? "").trim().toLocaleLowerCase("pt");
@@ -32,38 +50,37 @@ export default async function MedicosPage({ searchParams }: { searchParams: Prom
   return (
     <>
       <PageHeader
-        eyebrow="Gestão"
-        title="Médicos"
-        description="Ocupação, produtividade e capacidade disponível — esta semana."
+        eyebrow={t("catalog.eyebrow")}
+        title={t("doctors.title")}
+        description={t("doctors.description")}
         actions={
           canManage ? (
             <>
               <CadastroButton
                 variant="secondary"
-                label="Nova especialidade"
-                title="Nova especialidade"
+                label={t("doctors.newSpecialty")}
+                title={t("doctors.newSpecialty")}
                 action={createSpecialtyRecord}
                 fields={[
-                  { name: "name", label: "Nome", required: true, full: true, placeholder: "Ex.: Neurologia" },
-                  { name: "color", label: "Cor", type: "select", full: true, defaultValue: "#0C7C74", options: [
-                    { value: "#0C7C74", label: "Teal" }, { value: "#2563a8", label: "Azul" }, { value: "#cb4133", label: "Vermelho" },
-                    { value: "#8a4fbf", label: "Roxo" }, { value: "#b26a06", label: "Âmbar" }, { value: "#1f9d57", label: "Verde" },
-                  ] },
+                  { name: "name", label: t("settings.specialties.name"), required: true, full: true, placeholder: t("doctors.specialtyPlaceholder") },
+                  { name: "color", label: t("settings.specialties.color"), type: "select", full: true, defaultValue: SPECIALTY_PALETTE[0].value, options: SPECIALTY_PALETTE.map((option) => ({
+                    value: option.value, label: t(`settings.specialties.colors.${option.key}`),
+                  })) },
                 ]}
               />
               <CadastroButton
-                label="Novo médico"
-                title="Novo médico"
-                description="Adicione um médico e o seu horário padrão (Seg–Sex, 08:00–16:00)."
+                label={t("doctors.newDoctor")}
+                title={t("doctors.newDoctor")}
+                description={t("doctors.newDoctorDescription")}
                 action={createDoctorRecord}
                 fields={[
-                  { name: "name", label: "Nome", required: true, full: true, placeholder: "Ex.: Dra. Marta Sitoe" },
-                  { name: "specialtyId", label: "Especialidade", type: "select", required: true, full: true, options: specialties.map((s) => ({ value: s.id, label: s.name })) },
-                  { name: "consultationPrice", label: "Preço da consulta", type: "money", required: true, suffix: "MZN", placeholder: "1500" },
-                  { name: "consultationDuration", label: "Duração", type: "number", suffix: "min", defaultValue: "30" },
-                  { name: "phone", label: "Telefone", type: "tel" },
-                  { name: "email", label: "Email", type: "email" },
-                  { name: "licenseNumber", label: "Cédula (OMM)", full: true },
+                  { name: "name", label: t("doctors.fields.name"), required: true, full: true, placeholder: t("doctors.fields.namePlaceholder") },
+                  { name: "specialtyId", label: t("doctors.fields.specialty"), type: "select", required: true, full: true, options: specialties.map((s) => ({ value: s.id, label: s.name })) },
+                  { name: "consultationPrice", label: t("doctors.fields.consultationPrice"), type: "money", required: true, suffix: f.currency, placeholder: "1500" },
+                  { name: "consultationDuration", label: t("doctors.fields.duration"), type: "number", suffix: t("doctors.minutesUnit"), defaultValue: "30" },
+                  { name: "phone", label: t("doctors.fields.phone"), type: "tel" },
+                  { name: "email", label: t("doctors.fields.email"), type: "email" },
+                  { name: "licenseNumber", label: t("doctors.fields.license"), full: true },
                 ]}
               />
             </>
@@ -72,19 +89,19 @@ export default async function MedicosPage({ searchParams }: { searchParams: Prom
       />
 
       <ListFilters action="/medicos" fields={[
-        { name: "q", label: "Pesquisar", value: sp.q?.trim(), type: "search", placeholder: "Nome do médico…" },
-        { name: "especialidade", label: "Especialidade", value: sp.especialidade, options: specialties.map((specialty) => ({ value: specialty.id, label: specialty.name })) },
+        { name: "q", label: t("catalog.search"), value: sp.q?.trim(), type: "search", placeholder: t("doctors.searchPlaceholder") },
+        { name: "especialidade", label: t("doctors.fields.specialty"), value: sp.especialidade, options: specialties.map((specialty) => ({ value: specialty.id, label: specialty.name })) },
       ]} />
 
       <div className="space-y-3">
-        {doctors.length === 0 && <Card className="p-8 text-center text-sm text-muted-foreground">Nenhum médico corresponde aos filtros.</Card>}
+        {doctors.length === 0 && <Card className="p-8 text-center text-sm text-muted-foreground">{t("doctors.empty")}</Card>}
         {doctors.map((d) => (
           <Link
             key={d.id}
             href={`/medicos/${d.id}`}
             className="block transition-colors"
           >
-            <Card className="p-4 transition-colors hover:border-primary/40">
+            <Card className="p-4 hover:shadow-card-hover hover:[--card-border:var(--primary-edge)]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <Avatar name={d.name} color={d.color} className="size-10 text-sm flex-shrink-0" />
@@ -93,19 +110,19 @@ export default async function MedicosPage({ searchParams }: { searchParams: Prom
                     <p className="text-[13px] text-muted-foreground">{d.specialty}</p>
                   </div>
                 </div>
-                
+
                 <div className="flex items-center gap-4 flex-shrink-0 ml-4">
                   <div className="text-right">
                     <p className="text-sm font-semibold tabular">{d.occupancy}%</p>
-                    <p className="text-[11px] text-muted-foreground">Ocupação</p>
+                    <p className="text-[11px] text-muted-foreground">{t("doctors.occupancy")}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold tabular">{d.consultas}</p>
-                    <p className="text-[11px] text-muted-foreground">Consultas</p>
+                    <p className="text-[11px] text-muted-foreground">{t("doctors.consultations")}</p>
                   </div>
                   {canViewFinancials && <div className="text-right">
-                    <p className="text-sm font-semibold tabular">{formatMZN(d.receita)}</p>
-                    <p className="text-[11px] text-muted-foreground">Receita</p>
+                    <p className="text-sm font-semibold tabular">{f.money(d.receita)}</p>
+                    <p className="text-[11px] text-muted-foreground">{t("doctors.revenue")}</p>
                   </div>}
                 </div>
               </div>

@@ -7,6 +7,8 @@ import { audit } from "@/lib/audit";
 import { hashPassword, requireUser, type SessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ADMINISTRATIVE_ROLES, can } from "@/lib/rbac";
+import { getTranslator } from "@/i18n/server";
+import type { Translator } from "@/i18n/translate";
 
 const ROLES = [
   "SUPER_ADMIN",
@@ -22,22 +24,24 @@ const ROLES = [
 ] as const;
 const ADMIN_ROLES: UserRole[] = ADMINISTRATIVE_ROLES;
 
-const userSchema = z.object({
-  name: z.string().trim().min(3, "Indique o nome completo."),
-  email: z.string().trim().toLowerCase().email("Indique um email válido."),
-  role: z.enum(ROLES, { error: "Selecione um perfil válido." }),
-  doctorId: z.string().trim().optional().default(""),
-});
+const userSchema = (t: Translator) =>
+  z.object({
+    name: z.string().trim().min(3, t("users.errors.nameRequired")),
+    email: z.string().trim().toLowerCase().email(t("users.errors.emailInvalid")),
+    role: z.enum(ROLES, { error: t("users.errors.roleInvalid") }),
+    doctorId: z.string().trim().optional().default(""),
+  });
 
-type UserValues = z.input<typeof userSchema>;
+type UserValues = z.input<ReturnType<typeof userSchema>>;
 export type UserActionResult = { ok: true; password?: string } | { error: string };
 
-type GuardResult = { ok: true; actor: SessionUser } | { ok: false; error: string };
+type GuardResult = { ok: true; actor: SessionUser; t: Translator } | { ok: false; error: string };
 
 async function guard(): Promise<GuardResult> {
   const actor = await requireUser();
-  if (!can(actor.role, "user.manage")) return { ok: false, error: "Sem permissão para gerir utilizadores." };
-  return { ok: true, actor };
+  const t = await getTranslator();
+  if (!can(actor.role, "user.manage")) return { ok: false, error: t("users.errors.noPermission") };
+  return { ok: true, actor, t };
 }
 
 function defaultPassword(): string | null {
@@ -45,24 +49,24 @@ function defaultPassword(): string | null {
   return password.length >= 8 ? password : null;
 }
 
-function prismaMessage(error: unknown): string {
+function prismaMessage(error: unknown, t: Translator): string {
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-    return "Já existe um utilizador com esse email nesta clínica.";
+    return t("users.errors.emailTaken");
   }
-  return "Não foi possível guardar o utilizador. Tente novamente.";
+  return t("users.errors.saveFailed");
 }
 
 type DoctorResult = { ok: true; doctorId: string | null } | { ok: false; error: string };
 
-async function validateDoctor(clinicId: string, doctorId: string, userId?: string): Promise<DoctorResult> {
+async function validateDoctor(t: Translator, clinicId: string, doctorId: string, userId?: string): Promise<DoctorResult> {
   if (!doctorId) return { ok: true, doctorId: null };
   const doctor = await prisma.doctor.findFirst({
     where: { id: doctorId, clinicId },
     select: { id: true, userId: true },
   });
-  if (!doctor) return { ok: false, error: "O médico selecionado não pertence a esta clínica." };
+  if (!doctor) return { ok: false, error: t("users.errors.doctorOtherClinic") };
   if (doctor.userId && doctor.userId !== userId) {
-    return { ok: false, error: "Este médico já está associado a outro utilizador." };
+    return { ok: false, error: t("users.errors.doctorTaken") };
   }
   return { ok: true, doctorId: doctor.id };
 }
@@ -71,23 +75,24 @@ function canManageTarget(actorRole: UserRole, targetRole: UserRole) {
   return actorRole === "SUPER_ADMIN" || targetRole !== "SUPER_ADMIN";
 }
 
-async function ensureAdminRemains(clinicId: string, target: { role: UserRole; isActive: boolean }, next: { role: UserRole; isActive: boolean }) {
+async function ensureAdminRemains(t: Translator, clinicId: string, target: { role: UserRole; isActive: boolean }, next: { role: UserRole; isActive: boolean }) {
   const removesActiveAdmin = target.isActive && ADMIN_ROLES.includes(target.role) && (!next.isActive || !ADMIN_ROLES.includes(next.role));
   if (!removesActiveAdmin) return null;
   const activeAdmins = await prisma.user.count({ where: { clinicId, isActive: true, role: { in: ADMIN_ROLES } } });
-  return activeAdmins <= 1 ? "A clínica deve manter pelo menos um administrador ativo." : null;
+  return activeAdmins <= 1 ? t("users.errors.lastAdmin") : null;
 }
 
 export async function createUser(values: UserValues): Promise<UserActionResult> {
   const access = await guard();
   if (!access.ok) return { error: access.error };
-  const parsed = userSchema.safeParse(values);
+  const { t } = access;
+  const parsed = userSchema(t).safeParse(values);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  if (!canManageTarget(access.actor.role, parsed.data.role)) return { error: "Apenas um Super Admin pode criar outro Super Admin." };
+  if (!canManageTarget(access.actor.role, parsed.data.role)) return { error: t("users.errors.superAdminCreate") };
 
   const password = defaultPassword();
-  if (!password) return { error: "Configure DEFAULT_USER_PASSWORD com pelo menos 8 caracteres." };
-  const doctor = await validateDoctor(access.actor.clinicId, parsed.data.doctorId);
+  if (!password) return { error: t("users.errors.defaultPassword") };
+  const doctor = await validateDoctor(t, access.actor.clinicId, parsed.data.doctorId);
   if (!doctor.ok) return { error: doctor.error };
 
   try {
@@ -116,30 +121,31 @@ export async function createUser(values: UserValues): Promise<UserActionResult> 
     revalidatePath("/configuracoes");
     return { ok: true, password };
   } catch (error) {
-    return { error: prismaMessage(error) };
+    return { error: prismaMessage(error, t) };
   }
 }
 
 export async function updateUser(id: string, values: UserValues): Promise<UserActionResult> {
   const access = await guard();
   if (!access.ok) return { error: access.error };
-  const parsed = userSchema.safeParse(values);
+  const { t } = access;
+  const parsed = userSchema(t).safeParse(values);
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const target = await prisma.user.findFirst({
     where: { id, clinicId: access.actor.clinicId },
     select: { id: true, role: true, isActive: true, doctor: { select: { id: true } } },
   });
-  if (!target) return { error: "Utilizador não encontrado." };
+  if (!target) return { error: t("users.errors.notFound") };
   if (!canManageTarget(access.actor.role, target.role) || !canManageTarget(access.actor.role, parsed.data.role)) {
-    return { error: "Apenas um Super Admin pode gerir perfis de Super Admin." };
+    return { error: t("users.errors.superAdminRoles") };
   }
   if (target.id === access.actor.userId && parsed.data.role !== target.role) {
-    return { error: "Não pode alterar o seu próprio perfil." };
+    return { error: t("users.errors.ownRole") };
   }
-  const adminError = await ensureAdminRemains(access.actor.clinicId, target, { role: parsed.data.role, isActive: target.isActive });
+  const adminError = await ensureAdminRemains(t, access.actor.clinicId, target, { role: parsed.data.role, isActive: target.isActive });
   if (adminError) return { error: adminError };
-  const doctor = await validateDoctor(access.actor.clinicId, parsed.data.doctorId, target.id);
+  const doctor = await validateDoctor(t, access.actor.clinicId, parsed.data.doctorId, target.id);
   if (!doctor.ok) return { error: doctor.error };
 
   try {
@@ -166,21 +172,22 @@ export async function updateUser(id: string, values: UserValues): Promise<UserAc
     revalidatePath("/configuracoes");
     return { ok: true };
   } catch (error) {
-    return { error: prismaMessage(error) };
+    return { error: prismaMessage(error, t) };
   }
 }
 
 export async function setUserActive(id: string, isActive: boolean): Promise<UserActionResult> {
   const access = await guard();
   if (!access.ok) return { error: access.error };
+  const { t } = access;
   const target = await prisma.user.findFirst({
     where: { id, clinicId: access.actor.clinicId },
     select: { id: true, role: true, isActive: true },
   });
-  if (!target) return { error: "Utilizador não encontrado." };
-  if (!canManageTarget(access.actor.role, target.role)) return { error: "Apenas um Super Admin pode gerir este utilizador." };
-  if (target.id === access.actor.userId && !isActive) return { error: "Não pode desativar a sua própria conta." };
-  const adminError = await ensureAdminRemains(access.actor.clinicId, target, { role: target.role, isActive });
+  if (!target) return { error: t("users.errors.notFound") };
+  if (!canManageTarget(access.actor.role, target.role)) return { error: t("users.errors.superAdminUser") };
+  if (target.id === access.actor.userId && !isActive) return { error: t("users.errors.ownDeactivate") };
+  const adminError = await ensureAdminRemains(t, access.actor.clinicId, target, { role: target.role, isActive });
   if (adminError) return { error: adminError };
 
   await prisma.user.update({ where: { id: target.id }, data: { isActive } });
@@ -198,14 +205,15 @@ export async function setUserActive(id: string, isActive: boolean): Promise<User
 export async function resetUserPassword(id: string): Promise<UserActionResult> {
   const access = await guard();
   if (!access.ok) return { error: access.error };
+  const { t } = access;
   const target = await prisma.user.findFirst({
     where: { id, clinicId: access.actor.clinicId },
     select: { id: true, role: true },
   });
-  if (!target) return { error: "Utilizador não encontrado." };
-  if (!canManageTarget(access.actor.role, target.role)) return { error: "Apenas um Super Admin pode gerir este utilizador." };
+  if (!target) return { error: t("users.errors.notFound") };
+  if (!canManageTarget(access.actor.role, target.role)) return { error: t("users.errors.superAdminUser") };
   const password = defaultPassword();
-  if (!password) return { error: "Configure DEFAULT_USER_PASSWORD com pelo menos 8 caracteres." };
+  if (!password) return { error: t("users.errors.defaultPassword") };
 
   await prisma.user.update({
     where: { id: target.id },

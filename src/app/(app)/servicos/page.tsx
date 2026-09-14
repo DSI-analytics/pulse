@@ -10,24 +10,24 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatMZN } from "@/lib/money";
 import { ListFilters } from "@/components/list-filters";
+import { getFormatters, getTranslator } from "@/i18n/server";
 import type { RevenueSource } from "@prisma/client";
-
-const SOURCE_LABEL: Record<string, string> = {
-  CONSULTA: "Consulta",
-  EXAME: "Exame",
-  PROCEDIMENTO: "Procedimento",
-  PRODUTO: "Produto",
-  SEGURADORA: "Seguradora",
-  PRIVADO: "Privado",
-  OUTRO: "Outro",
-};
 
 const SERVICE_SOURCES = ["CONSULTA", "EXAME", "PROCEDIMENTO", "PRODUTO", "SEGURADORA", "PRIVADO", "OUTRO"] as RevenueSource[];
 
+/** Tipos que se podem escolher ao cadastrar/editar um serviço. */
+const EDITABLE_SOURCES = ["EXAME", "PROCEDIMENTO", "CONSULTA", "PRODUTO", "OUTRO"] as const satisfies readonly RevenueSource[];
+
+export async function generateMetadata() {
+  const t = await getTranslator();
+  return { title: t("services.title") };
+}
+
 export default async function ServicosPage({ searchParams }: { searchParams: Promise<{ q?: string; categoria?: string; tipo?: string; estado?: string }> }) {
   const user = await requirePermission("service.view");
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
+  const sourceOptions = EDITABLE_SOURCES.map((value) => ({ value, label: t(`services.sources.${value}`) }));
   const sp = await searchParams;
   const query = (sp.q ?? "").trim();
   const source = SERVICE_SOURCES.includes(sp.tipo as RevenueSource) ? sp.tipo as RevenueSource : undefined;
@@ -51,27 +51,21 @@ export default async function ServicosPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageHeader
-        eyebrow="Gestão"
-        title="Serviços e Exames"
-        description={`${services.length} serviços · tabela de preços da clínica`}
+        eyebrow={t("catalog.eyebrow")}
+        title={t("services.title")}
+        description={t("services.description", { count: services.length })}
         actions={
           canManage ? (
             <CadastroButton
-              label="Novo serviço"
-              title="Novo serviço ou exame"
-              description="Fica disponível para marcação e define o preço cobrado."
+              label={t("services.newService")}
+              title={t("services.newServiceTitle")}
+              description={t("services.newServiceDescription")}
               action={createServiceRecord}
               fields={[
-                { name: "name", label: "Nome", required: true, full: true, placeholder: "Ex.: Hemograma completo" },
-                { name: "source", label: "Tipo", type: "select", defaultValue: "EXAME", options: [
-                  { value: "EXAME", label: "Exame" },
-                  { value: "PROCEDIMENTO", label: "Procedimento" },
-                  { value: "CONSULTA", label: "Consulta" },
-                  { value: "PRODUTO", label: "Produto" },
-                  { value: "OUTRO", label: "Outro" },
-                ] },
-                { name: "category", label: "Categoria", defaultValue: "Análises clínicas", placeholder: "Ex.: Imagiologia" },
-                { name: "basePrice", label: "Preço", type: "money", required: true, suffix: "MZN", placeholder: "1200", full: true },
+                { name: "name", label: t("services.fields.name"), required: true, full: true, placeholder: t("services.fields.namePlaceholder") },
+                { name: "source", label: t("services.fields.type"), type: "select", defaultValue: "EXAME", options: sourceOptions },
+                { name: "category", label: t("services.fields.category"), defaultValue: t("services.fields.categoryDefault"), placeholder: t("services.fields.categoryPlaceholder") },
+                { name: "basePrice", label: t("services.fields.price"), type: "money", required: true, suffix: f.currency, placeholder: "1200", full: true },
               ]}
             />
           ) : undefined
@@ -79,10 +73,10 @@ export default async function ServicosPage({ searchParams }: { searchParams: Pro
       />
 
       <ListFilters action="/servicos" fields={[
-        { name: "q", label: "Pesquisar", value: query, type: "search", placeholder: "Nome do serviço ou exame…" },
-        { name: "categoria", label: "Categoria", value: sp.categoria, options: categoryRows.map(({ category }) => ({ value: category, label: category })) },
-        { name: "tipo", label: "Tipo", value: source, options: SERVICE_SOURCES.map((value) => ({ value, label: SOURCE_LABEL[value] })) },
-        { name: "estado", label: "Estado", value: sp.estado, options: [{ value: "ativo", label: "Activo" }, { value: "inativo", label: "Inactivo" }] },
+        { name: "q", label: t("catalog.search"), value: query, type: "search", placeholder: t("services.searchPlaceholder") },
+        { name: "categoria", label: t("services.fields.category"), value: sp.categoria, options: categoryRows.map(({ category }) => ({ value: category, label: category })) },
+        { name: "tipo", label: t("services.fields.type"), value: source, options: SERVICE_SOURCES.map((value) => ({ value, label: t(`services.sources.${value}`) })) },
+        { name: "estado", label: t("catalog.status"), value: sp.estado, options: [{ value: "ativo", label: t("common.active") }, { value: "inativo", label: t("common.inactive") }] },
       ]} />
 
       <Card>
@@ -91,21 +85,21 @@ export default async function ServicosPage({ searchParams }: { searchParams: Pro
             <div className="p-6">
               <EmptyState
                 icon={FlaskConical}
-                title="Sem serviços cadastrados"
-                description="Cadastre os exames e procedimentos da clínica para os poder marcar e facturar."
+                title={t("services.emptyTitle")}
+                description={t("services.emptyDescription")}
               />
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Serviço</TableHead>
-                  <TableHead>Categoria</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead className="text-right">Marcações</TableHead>
-                  <TableHead className="text-right">Preço</TableHead>
-                  <TableHead>Estado</TableHead>
-                  {canManage && <TableHead className="text-right">Ações</TableHead>}
+                  <TableHead>{t("services.columns.service")}</TableHead>
+                  <TableHead>{t("services.columns.category")}</TableHead>
+                  <TableHead>{t("services.columns.type")}</TableHead>
+                  <TableHead className="text-right">{t("services.columns.appointments")}</TableHead>
+                  <TableHead className="text-right">{t("services.columns.price")}</TableHead>
+                  <TableHead>{t("catalog.status")}</TableHead>
+                  {canManage && <TableHead className="text-right">{t("catalog.actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -113,27 +107,21 @@ export default async function ServicosPage({ searchParams }: { searchParams: Pro
                   <TableRow key={s.id}>
                     <TableCell className="font-medium">{s.name}</TableCell>
                     <TableCell className="text-[13px] text-muted-foreground">{s.category}</TableCell>
-                    <TableCell><Badge variant="neutral">{SOURCE_LABEL[s.source] ?? s.source}</Badge></TableCell>
+                    <TableCell><Badge variant="neutral">{t(`services.sources.${s.source}`)}</Badge></TableCell>
                     <TableCell className="text-right tabular">{s._count.appointments}</TableCell>
-                    <TableCell className="text-right font-medium tabular">{formatMZN(s.basePrice)}</TableCell>
-                    <TableCell><Badge variant={s.isActive ? "success" : "neutral"}>{s.isActive ? "Activo" : "Inactivo"}</Badge></TableCell>
+                    <TableCell className="text-right font-medium tabular">{f.money(s.basePrice)}</TableCell>
+                    <TableCell><Badge variant={s.isActive ? "success" : "neutral"}>{s.isActive ? t("common.active") : t("common.inactive")}</Badge></TableCell>
                     {canManage && (
                       <TableCell className="text-right">
                         <TableRecordCrudCell
                           id={s.id}
-                          title="Editar serviço"
-                          description="Atualize os detalhes do serviço ou exame."
+                          title={t("services.editTitle")}
+                          description={t("services.editDescription")}
                           fields={[
-                            { name: "name", label: "Nome", required: true, defaultValue: s.name },
-                            { name: "category", label: "Categoria", defaultValue: s.category },
-                            { name: "source", label: "Tipo", type: "select", defaultValue: s.source, options: [
-                              { value: "EXAME", label: "Exame" },
-                              { value: "PROCEDIMENTO", label: "Procedimento" },
-                              { value: "CONSULTA", label: "Consulta" },
-                              { value: "PRODUTO", label: "Produto" },
-                              { value: "OUTRO", label: "Outro" },
-                            ] },
-                            { name: "basePrice", label: "Preço", type: "money", required: true, defaultValue: String(s.basePrice), suffix: "MZN" },
+                            { name: "name", label: t("services.fields.name"), required: true, defaultValue: s.name },
+                            { name: "category", label: t("services.fields.category"), defaultValue: s.category },
+                            { name: "source", label: t("services.fields.type"), type: "select", defaultValue: s.source, options: sourceOptions },
+                            { name: "basePrice", label: t("services.fields.price"), type: "money", required: true, defaultValue: String(s.basePrice), suffix: f.currency },
                           ]}
                           updateAction={updateServiceRecord}
                           deleteAction={deleteServiceRecord}

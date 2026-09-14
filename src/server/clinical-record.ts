@@ -1,6 +1,8 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { bmiBand, computeBmi, flagVitals } from "@/lib/domain/vitals";
+import { getTranslator } from "@/i18n/server";
+import { clinicalEnumLabel } from "@/components/clinical/enum-label";
 
 /**
  * Leitura do prontuário clínico electrónico.
@@ -238,6 +240,8 @@ export async function getPatientTimeline(
       : [],
   ]);
 
+  const t = await getTranslator();
+  const label = (value: string) => clinicalEnumLabel(t, value);
   const events: TimelineEvent[] = [];
 
   for (const e of encounters) {
@@ -245,7 +249,7 @@ export async function getPatientTimeline(
       id: `encounter:${e.id}`,
       type: "EPISODIO",
       at: e.startedAt.toISOString(),
-      title: `Episódio ${e.number} · ${e.type.replace(/_/g, " ").toLowerCase()}`,
+      title: t("clinical.timeline.events.encounter", { number: e.number, type: label(e.type) }),
       summary: e.reason,
       professional: e.doctor?.name ?? null,
       specialty: e.specialty?.name ?? null,
@@ -259,7 +263,7 @@ export async function getPatientTimeline(
       id: `consultation:${c.id}`,
       type: "CONSULTA",
       at: c.startedAt.toISOString(),
-      title: "Consulta",
+      title: t("clinical.timeline.events.consultation"),
       summary: c.chiefComplaint || c.subjective || c.diagnosis,
       professional: c.doctor?.name ?? null,
       specialty: c.appointment?.specialty?.name ?? null,
@@ -273,7 +277,7 @@ export async function getPatientTimeline(
       type: "DIAGNOSTICO",
       at: d.recordedAt.toISOString(),
       title: d.description,
-      summary: [d.code ? `${d.codeSystem ?? "Código"} ${d.code}` : null, d.kind.toLowerCase(), d.certainty.toLowerCase()]
+      summary: [d.code ? `${d.codeSystem ?? t("clinical.timeline.events.code")} ${d.code}` : null, label(d.kind), label(d.certainty)]
         .filter(Boolean)
         .join(" · "),
       professional: d.doctor?.name ?? null,
@@ -286,20 +290,20 @@ export async function getPatientTimeline(
   for (const v of vitals) {
     const flags = flagVitals(v);
     const parts: string[] = [];
-    if (v.systolic && v.diastolic) parts.push(`PA ${v.systolic}/${v.diastolic} mmHg`);
-    if (v.heartRate) parts.push(`FC ${v.heartRate} bpm`);
-    if (v.respiratoryRate) parts.push(`FR ${v.respiratoryRate} cpm`);
-    if (v.temperature) parts.push(`T ${v.temperature} °C`);
-    if (v.oxygenSaturation) parts.push(`SpO₂ ${v.oxygenSaturation}%`);
-    if (v.glucose) parts.push(`Glicemia ${v.glucose} mg/dL`);
-    if (v.weightKg) parts.push(`Peso ${v.weightKg} kg`);
-    if (v.bmi) parts.push(`IMC ${v.bmi}`);
-    if (v.painScore !== null && v.painScore !== undefined) parts.push(`Dor ${v.painScore}/10`);
+    if (v.systolic && v.diastolic) parts.push(t("clinical.vitals.summary.bloodPressure", { systolic: v.systolic, diastolic: v.diastolic }));
+    if (v.heartRate) parts.push(t("clinical.vitals.summary.heartRate", { value: v.heartRate }));
+    if (v.respiratoryRate) parts.push(t("clinical.vitals.summary.respiratoryRate", { value: v.respiratoryRate }));
+    if (v.temperature) parts.push(t("clinical.vitals.summary.temperature", { value: v.temperature }));
+    if (v.oxygenSaturation) parts.push(t("clinical.vitals.summary.oxygenSaturation", { value: v.oxygenSaturation }));
+    if (v.glucose) parts.push(t("clinical.vitals.summary.glucose", { value: v.glucose }));
+    if (v.weightKg) parts.push(t("clinical.vitals.summary.weight", { value: v.weightKg }));
+    if (v.bmi) parts.push(t("clinical.vitals.summary.bmi", { value: v.bmi }));
+    if (v.painScore !== null && v.painScore !== undefined) parts.push(t("clinical.vitals.summary.pain", { value: v.painScore }));
     events.push({
       id: `vital:${v.id}`,
       type: "SINAIS_VITAIS",
       at: v.recordedAt.toISOString(),
-      title: "Sinais vitais",
+      title: t("clinical.timeline.events.vitals"),
       summary: parts.join(" · ") || null,
       professional: v.recordedBy?.name ?? null,
       encounterId: v.encounterId,
@@ -312,7 +316,7 @@ export async function getPatientTimeline(
       id: `allergy:${a.id}`,
       type: "ALERGIA",
       at: a.createdAt.toISOString(),
-      title: `Alergia registada: ${a.substance}`,
+      title: t("clinical.timeline.events.allergy", { substance: a.substance }),
       summary: a.reaction,
       professional: a.doctor?.name ?? null,
       severity: a.status === "ACTIVA" && (a.severity === "GRAVE" || a.severity === "FATAL") ? "CRITICO" : "AVISO",
@@ -325,7 +329,7 @@ export async function getPatientTimeline(
       id: `prescription:${p.id}`,
       type: "PRESCRICAO",
       at: p.issuedAt.toISOString(),
-      title: `Receita ${p.number}`,
+      title: t("clinical.timeline.events.prescription", { number: p.number }),
       summary: p.items.map((i) => [i.medicationName, i.dose && `${i.dose}${i.doseUnit ?? ""}`, i.frequency].filter(Boolean).join(" ")).join("; ") || null,
       professional: p.doctor?.name ?? null,
       encounterId: p.encounterId,
@@ -339,7 +343,7 @@ export async function getPatientTimeline(
       type: "EXAME",
       at: o.requestedAt.toISOString(),
       title: `${o.name}`,
-      summary: `${o.category.toLowerCase()} · prioridade ${o.priority.toLowerCase()} · ${o.number}`,
+      summary: t("clinical.timeline.events.order", { category: label(o.category), priority: label(o.priority), number: o.number }),
       professional: o.doctor?.name ?? null,
       encounterId: o.encounterId,
       severity: o.priority === "EMERGENTE" ? "CRITICO" : o.priority === "URGENTE" ? "AVISO" : "INFO",
@@ -353,8 +357,8 @@ export async function getPatientTimeline(
       id: `result:${r.id}`,
       type: "RESULTADO",
       at: (r.performedAt ?? r.validatedAt ?? new Date(0)).toISOString(),
-      title: `Resultado · ${r.order.name}`,
-      summary: r.conclusion ?? (abnormal.length ? `Valores alterados: ${abnormal.join("; ")}` : null),
+      title: t("clinical.timeline.events.result", { name: r.order.name }),
+      summary: r.conclusion ?? (abnormal.length ? t("clinical.timeline.events.abnormalValues", { values: abnormal.join("; ") }) : null),
       encounterId: r.order.encounterId,
       severity: abnormal.length ? "AVISO" : "INFO",
       badge: r.validatedAt ? "VALIDADO" : "POR VALIDAR",
@@ -367,7 +371,7 @@ export async function getPatientTimeline(
       type: "PROCEDIMENTO",
       at: p.performedAt.toISOString(),
       title: p.name,
-      summary: [p.outcome, p.complications ? `Complicações: ${p.complications}` : null].filter(Boolean).join(" · ") || null,
+      summary: [p.outcome, p.complications ? t("clinical.timeline.events.complications", { text: p.complications }) : null].filter(Boolean).join(" · ") || null,
       professional: p.doctor?.name ?? null,
       encounterId: p.encounterId,
       severity: p.complications ? "AVISO" : "INFO",
@@ -394,7 +398,7 @@ export async function getPatientTimeline(
         id: `admission:${a.id}`,
         type: "INTERNAMENTO",
         at: a.admittedAt.toISOString(),
-        title: `Internamento ${a.number}`,
+        title: t("clinical.timeline.events.admission", { number: a.number }),
         summary: [a.reason, [a.ward, a.room, a.bed].filter(Boolean).join(" · ")].filter(Boolean).join(" — ") || null,
         professional: a.doctor?.name ?? null,
         encounterId: a.encounterId,
@@ -406,7 +410,7 @@ export async function getPatientTimeline(
         id: `discharge:${a.id}`,
         type: "ALTA",
         at: a.dischargedAt.toISOString(),
-        title: `Alta do internamento ${a.number}`,
+        title: t("clinical.timeline.events.discharge", { number: a.number }),
         summary: a.dischargeSummary,
         professional: a.doctor?.name ?? null,
         encounterId: a.encounterId,
@@ -420,7 +424,7 @@ export async function getPatientTimeline(
       type: "DOCUMENTO",
       at: d.createdAt.toISOString(),
       title: d.name,
-      summary: `${d.category.toLowerCase()} · ${d.mimeType} · ${Math.round(d.sizeBytes / 1024)} KB`,
+      summary: `${label(d.category)} · ${d.mimeType} · ${Math.round(d.sizeBytes / 1024)} KB`,
       professional: d.uploadedBy?.name ?? null,
       encounterId: d.encounterId,
     });
@@ -484,13 +488,16 @@ export async function getPatientClinicalSummary(clinicId: string, patientId: str
     }),
   ]);
 
+  const t = await getTranslator();
   const alerts: ClinicalAlert[] = [];
   for (const a of allergies) {
     alerts.push({
       kind: "ALERGIA",
       severity: a.severity === "GRAVE" || a.severity === "FATAL" ? "CRITICO" : "AVISO",
-      title: `${a.kind === "ALERGIA" ? "Alergia" : "Intolerância"}: ${a.substance}`,
-      detail: [a.reaction, `gravidade ${a.severity.toLowerCase()}`].filter(Boolean).join(" · "),
+      title: t("clinical.alerts.allergyTitle", { kind: t(`clinical.allergyKind.${a.kind}`), substance: a.substance }),
+      detail: [a.reaction, t("clinical.alerts.severityDetail", { severity: clinicalEnumLabel(t, a.severity) })]
+        .filter(Boolean)
+        .join(" · "),
     });
   }
   if (latestVitals) {
@@ -499,8 +506,8 @@ export async function getPatientClinicalSummary(clinicId: string, patientId: str
       alerts.push({
         kind: "SINAL_VITAL",
         severity: "CRITICO",
-        title: `Sinal vital fora do intervalo (${flag.key})`,
-        detail: `Valor ${flag.value} — ${flag.direction.toLowerCase()}`,
+        title: t("clinical.alerts.vitalOutOfRange", { vital: flag.key }),
+        detail: t("clinical.alerts.vitalValue", { value: flag.value, direction: clinicalEnumLabel(t, flag.direction) }),
       });
     }
   }

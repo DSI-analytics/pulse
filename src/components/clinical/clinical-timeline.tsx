@@ -11,6 +11,8 @@ import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { loadPatientTimeline } from "@/server/timeline-actions";
 import type { TimelineEvent, TimelineEventType } from "@/server/clinical-record";
+import { useFormat, useT } from "@/i18n/client";
+import { clinicalEnumLabel } from "./enum-label";
 
 const ICON: Record<TimelineEventType, React.ComponentType<{ className?: string }>> = {
   EPISODIO: ClipboardList,
@@ -28,31 +30,27 @@ const ICON: Record<TimelineEventType, React.ComponentType<{ className?: string }
   DOCUMENTO: FileText,
 };
 
-const TYPE_OPTIONS: { value: TimelineEventType; label: string }[] = [
-  { value: "CONSULTA", label: "Consultas" },
-  { value: "EPISODIO", label: "Episódios" },
-  { value: "DIAGNOSTICO", label: "Diagnósticos" },
-  { value: "SINAIS_VITAIS", label: "Sinais vitais" },
-  { value: "ALERGIA", label: "Alergias" },
-  { value: "PRESCRICAO", label: "Prescrições" },
-  { value: "EXAME", label: "Pedidos de exame" },
-  { value: "RESULTADO", label: "Resultados" },
-  { value: "PROCEDIMENTO", label: "Procedimentos" },
-  { value: "TRATAMENTO", label: "Tratamentos" },
-  { value: "INTERNAMENTO", label: "Internamentos" },
-  { value: "ALTA", label: "Altas" },
-  { value: "DOCUMENTO", label: "Documentos" },
+/** Ordem das opções do filtro de tipo. */
+const TYPE_OPTIONS: TimelineEventType[] = [
+  "CONSULTA",
+  "EPISODIO",
+  "DIAGNOSTICO",
+  "SINAIS_VITAIS",
+  "ALERGIA",
+  "PRESCRICAO",
+  "EXAME",
+  "RESULTADO",
+  "PROCEDIMENTO",
+  "TRATAMENTO",
+  "INTERNAMENTO",
+  "ALTA",
+  "DOCUMENTO",
 ];
 
-function formatStamp(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleString("pt-PT", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
 function toneClass(severity?: TimelineEvent["severity"]): string {
-  if (severity === "CRITICO") return "border-danger/60 bg-danger-muted/40";
-  if (severity === "AVISO") return "border-warning/50 bg-warning-muted/30";
-  return "border-border bg-surface-2/40";
+  if (severity === "CRITICO") return "border-danger-edge bg-danger-muted";
+  if (severity === "AVISO") return "border-warning-edge bg-warning-muted";
+  return "border-border bg-fill-subtle";
 }
 
 export interface TimelineFilterOption {
@@ -81,6 +79,8 @@ export function ClinicalTimeline({
   specialties: TimelineFilterOption[];
   doctors: TimelineFilterOption[];
 }) {
+  const t = useT();
+  const f = useFormat();
   const [events, setEvents] = React.useState(initialEvents);
   const [cursor, setCursor] = React.useState(initialCursor);
   const [hasMore, setHasMore] = React.useState(initialHasMore);
@@ -141,29 +141,29 @@ export function ClinicalTimeline({
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
-        <Select aria-label="Tipo de evento" value={type} onChange={(e) => setType(e.target.value)} className="w-full md:w-auto md:min-w-40">
-          <option value="">Tipo: Todos</option>
-          {TYPE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        <Select aria-label={t("clinical.timeline.eventType")} value={type} onChange={(e) => setType(e.target.value)} className="w-full md:w-auto md:min-w-40">
+          <option value="">{t("common.allOption", { label: t("clinical.timeline.type") })}</option>
+          {TYPE_OPTIONS.map((value) => <option key={value} value={value}>{t(`clinical.timeline.types.${value}`)}</option>)}
         </Select>
-        <Select aria-label="Especialidade" value={specialtyId} onChange={(e) => setSpecialtyId(e.target.value)} className="w-full md:w-auto md:min-w-40">
-          <option value="">Especialidade: Todas</option>
+        <Select aria-label={t("clinical.timeline.specialty")} value={specialtyId} onChange={(e) => setSpecialtyId(e.target.value)} className="w-full md:w-auto md:min-w-40">
+          <option value="">{t("clinical.timeline.specialtyAll")}</option>
           {specialties.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </Select>
-        <Select aria-label="Profissional" value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className="w-full md:w-auto md:min-w-40">
-          <option value="">Profissional: Todos</option>
+        <Select aria-label={t("clinical.timeline.professional")} value={doctorId} onChange={(e) => setDoctorId(e.target.value)} className="w-full md:w-auto md:min-w-40">
+          <option value="">{t("common.allOption", { label: t("clinical.timeline.professional") })}</option>
           {doctors.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </Select>
-        <Input type="date" aria-label="De" value={from} onChange={(e) => setFrom(e.target.value)} className="w-full md:w-auto" />
-        <Input type="date" aria-label="Até" value={to} onChange={(e) => setTo(e.target.value)} className="w-full md:w-auto" />
+        <Input type="date" aria-label={t("clinical.timeline.from")} value={from} onChange={(e) => setFrom(e.target.value)} className="w-full md:w-auto" />
+        <Input type="date" aria-label={t("clinical.timeline.to")} value={to} onChange={(e) => setTo(e.target.value)} className="w-full md:w-auto" />
         <Button type="button" size="sm" onClick={applyFilters} disabled={pending}>
-          {pending ? "A filtrar…" : "Filtrar"}
+          {pending ? t("clinical.timeline.filtering") : t("common.filter")}
         </Button>
       </div>
 
       {error && <p role="alert" className="text-[13px] text-danger">{error}</p>}
 
       {events.length === 0 ? (
-        <p className="py-6 text-center text-sm text-muted-foreground">Sem eventos clínicos para os filtros escolhidos.</p>
+        <p className="py-6 text-center text-sm text-muted-foreground">{t("clinical.timeline.empty")}</p>
       ) : (
         <ol className="relative space-y-2 border-l border-border pl-5">
           {events.map((event) => {
@@ -174,9 +174,9 @@ export function ClinicalTimeline({
                   <Icon className="size-2.5 text-primary" aria-hidden />
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{event.type.replace(/_/g, " ").toLowerCase()}</Badge>
-                  <time dateTime={event.at} className="text-xs text-muted-foreground">{formatStamp(event.at)}</time>
-                  {event.badge && <Badge variant="neutral">{event.badge.replace(/_/g, " ").toLowerCase()}</Badge>}
+                  <Badge variant="outline">{clinicalEnumLabel(t, event.type)}</Badge>
+                  <time dateTime={event.at} className="text-xs text-muted-foreground">{`${f.dateMedium(event.at)}, ${f.time(event.at)}`}</time>
+                  {event.badge && <Badge variant="neutral">{clinicalEnumLabel(t, event.badge)}</Badge>}
                 </div>
                 <p className="mt-1 text-sm font-medium">{event.title}</p>
                 {event.summary && <p className="mt-0.5 whitespace-pre-wrap text-[13px] text-muted-foreground">{event.summary}</p>}
@@ -194,7 +194,7 @@ export function ClinicalTimeline({
       {hasMore && (
         <div className="flex justify-center">
           <Button type="button" variant="secondary" size="sm" onClick={loadMore} disabled={pending}>
-            {pending ? "A carregar…" : "Carregar mais"}
+            {pending ? t("common.loading") : t("clinical.timeline.loadMore")}
           </Button>
         </div>
       )}

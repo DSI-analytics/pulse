@@ -7,6 +7,7 @@ import {
   createDiagnosticOrderForPatient,
   recordVitalsForPatient,
 } from "@/server/clinical-form-actions";
+import { getTranslator } from "@/i18n/server";
 
 /**
  * Barra de registo clínico do prontuário.
@@ -18,7 +19,7 @@ import {
  * O `patientId` é ligado no servidor com `.bind(null, id)`, pelo que não viaja
  * no formulário e não pode ser trocado no cliente.
  */
-export function ClinicalRecordActions({
+export async function ClinicalRecordActions({
   patientId,
   medications,
   permissions,
@@ -35,95 +36,89 @@ export function ClinicalRecordActions({
 }) {
   const nothing = !Object.values(permissions).some(Boolean);
   if (nothing) return null;
+  const t = await getTranslator();
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       {permissions.vitals && (
         <CadastroButton
-          label="Sinais vitais"
-          title="Registar sinais vitais"
-          description="Deixe em branco o que não foi medido. O IMC é calculado automaticamente."
+          label={t("clinical.record.vitals.label")}
+          title={t("clinical.record.vitals.title")}
+          description={t("clinical.record.vitals.description")}
           variant="secondary"
           action={recordVitalsForPatient.bind(null, patientId)}
           fields={[
-            { name: "systolic", label: "Pressão sistólica", type: "number", suffix: "mmHg" },
-            { name: "diastolic", label: "Pressão diastólica", type: "number", suffix: "mmHg" },
-            { name: "heartRate", label: "Freq. cardíaca", type: "number", suffix: "bpm" },
-            { name: "respiratoryRate", label: "Freq. respiratória", type: "number", suffix: "cpm" },
-            { name: "temperature", label: "Temperatura", type: "number", suffix: "°C" },
-            { name: "oxygenSaturation", label: "Saturação O₂", type: "number", suffix: "%" },
-            { name: "weightKg", label: "Peso", type: "number", suffix: "kg" },
-            { name: "heightCm", label: "Altura", type: "number", suffix: "cm" },
-            { name: "glucose", label: "Glicemia", type: "number", suffix: "mg/dL" },
-            { name: "painScore", label: "Dor", type: "number", suffix: "0–10" },
+            { name: "systolic", label: t("clinical.vitals.labels.systolic"), type: "number", suffix: "mmHg" },
+            { name: "diastolic", label: t("clinical.vitals.labels.diastolic"), type: "number", suffix: "mmHg" },
+            { name: "heartRate", label: t("clinical.record.vitals.heartRate"), type: "number", suffix: "bpm" },
+            { name: "respiratoryRate", label: t("clinical.record.vitals.respiratoryRate"), type: "number", suffix: "cpm" },
+            { name: "temperature", label: t("clinical.vitals.labels.temperature"), type: "number", suffix: "°C" },
+            { name: "oxygenSaturation", label: t("clinical.record.vitals.oxygenSaturation"), type: "number", suffix: "%" },
+            { name: "weightKg", label: t("clinical.vitals.labels.weightKg"), type: "number", suffix: "kg" },
+            { name: "heightCm", label: t("clinical.vitals.labels.heightCm"), type: "number", suffix: "cm" },
+            { name: "glucose", label: t("clinical.vitals.labels.glucose"), type: "number", suffix: "mg/dL" },
+            { name: "painScore", label: t("clinical.vitals.labels.painScore"), type: "number", suffix: "0–10" },
             {
-              name: "source", label: "Contexto", type: "select", defaultValue: "CONSULTA",
-              options: [
-                { value: "CONSULTA", label: "Consulta" },
-                { value: "TRIAGEM", label: "Triagem" },
-                { value: "INTERNAMENTO", label: "Internamento" },
-                { value: "DOMICILIO", label: "Domicílio" },
-              ],
+              name: "source", label: t("clinical.record.vitals.context"), type: "select", defaultValue: "CONSULTA",
+              options: (["CONSULTA", "TRIAGEM", "INTERNAMENTO", "DOMICILIO"] as const).map((value) => ({
+                value,
+                label: t(`clinical.record.vitals.sources.${value}`),
+              })),
             },
-            { name: "notes", label: "Notas", full: true },
+            { name: "notes", label: t("clinical.record.vitals.notes"), full: true },
           ]}
         />
       )}
 
       {permissions.allergy && (
         <CadastroButton
-          label="Alergia"
-          title="Registar alergia ou intolerância"
-          description="Fica destacada no topo do prontuário e é verificada em cada prescrição."
+          label={t("clinical.record.allergy.label")}
+          title={t("clinical.record.allergy.title")}
+          description={t("clinical.record.allergy.description")}
           variant="secondary"
           action={addAllergyForPatient.bind(null, patientId)}
           fields={[
-            { name: "substance", label: "Substância", required: true, full: true, placeholder: "Ex.: Penicilina" },
+            { name: "substance", label: t("clinical.record.allergy.substance"), required: true, full: true, placeholder: t("clinical.record.allergy.substancePlaceholder") },
             {
-              name: "category", label: "Categoria", type: "select", defaultValue: "MEDICAMENTO",
-              options: [
-                { value: "MEDICAMENTO", label: "Medicamento" },
-                { value: "ALIMENTO", label: "Alimento" },
-                { value: "AMBIENTAL", label: "Ambiental" },
-                { value: "BIOLOGICO", label: "Biológico" },
-                { value: "OUTRO", label: "Outro" },
-              ],
+              name: "category", label: t("clinical.record.allergy.category"), type: "select", defaultValue: "MEDICAMENTO",
+              options: (["MEDICAMENTO", "ALIMENTO", "AMBIENTAL", "BIOLOGICO", "OUTRO"] as const).map((value) => ({
+                value,
+                label: t(`clinical.record.allergy.categories.${value}`),
+              })),
             },
             {
-              name: "kind", label: "Tipo", type: "select", defaultValue: "ALERGIA",
-              options: [
-                { value: "ALERGIA", label: "Alergia" },
-                { value: "INTOLERANCIA", label: "Intolerância" },
-              ],
+              name: "kind", label: t("clinical.record.allergy.kind"), type: "select", defaultValue: "ALERGIA",
+              options: (["ALERGIA", "INTOLERANCIA"] as const).map((value) => ({
+                value,
+                label: t(`clinical.allergyKind.${value}`),
+              })),
             },
             {
-              name: "severity", label: "Gravidade", type: "select", defaultValue: "MODERADA",
-              options: [
-                { value: "LEVE", label: "Leve" },
-                { value: "MODERADA", label: "Moderada" },
-                { value: "GRAVE", label: "Grave" },
-                { value: "FATAL", label: "Fatal" },
-              ],
+              name: "severity", label: t("clinical.record.allergy.severity"), type: "select", defaultValue: "MODERADA",
+              options: (["LEVE", "MODERADA", "GRAVE", "FATAL"] as const).map((value) => ({
+                value,
+                label: t(`clinical.record.allergy.severities.${value}`),
+              })),
             },
-            { name: "identifiedAt", label: "Identificada em", type: "date" },
-            { name: "reaction", label: "Reacção", full: true, placeholder: "Ex.: Urticária generalizada" },
-            { name: "notes", label: "Observações", full: true },
+            { name: "identifiedAt", label: t("clinical.record.allergy.identifiedAt"), type: "date" },
+            { name: "reaction", label: t("clinical.record.allergy.reaction"), full: true, placeholder: t("clinical.record.allergy.reactionPlaceholder") },
+            { name: "notes", label: t("clinical.record.allergy.notes"), full: true },
           ]}
         />
       )}
 
       {permissions.diagnosis && (
         <CadastroButton
-          label="Diagnóstico"
-          title="Registar diagnóstico"
-          description="O código é opcional; quando indicado, assume-se ICD-10 salvo indicação contrária."
+          label={t("clinical.record.diagnosis.label")}
+          title={t("clinical.record.diagnosis.title")}
+          description={t("clinical.record.diagnosis.description")}
           variant="secondary"
           action={addDiagnosisForPatient.bind(null, patientId)}
           fields={[
-            { name: "description", label: "Descrição", required: true, full: true, placeholder: "Ex.: Hipertensão essencial" },
-            { name: "code", label: "Código", placeholder: "Ex.: I10" },
+            { name: "description", label: t("clinical.record.diagnosis.descriptionField"), required: true, full: true, placeholder: t("clinical.record.diagnosis.descriptionPlaceholder") },
+            { name: "code", label: t("clinical.record.diagnosis.code"), placeholder: t("clinical.record.diagnosis.codePlaceholder") },
             {
-              name: "codeSystem", label: "Terminologia", type: "select", defaultValue: "ICD-10",
+              name: "codeSystem", label: t("clinical.record.diagnosis.terminology"), type: "select", defaultValue: "ICD-10",
               options: [
                 { value: "ICD-10", label: "ICD-10 / CID-10" },
                 { value: "ICD-11", label: "ICD-11" },
@@ -131,22 +126,21 @@ export function ClinicalRecordActions({
               ],
             },
             {
-              name: "kind", label: "Tipo", type: "select", defaultValue: "PRINCIPAL",
-              options: [
-                { value: "PRINCIPAL", label: "Principal" },
-                { value: "SECUNDARIO", label: "Secundário" },
-                { value: "DIFERENCIAL", label: "Diferencial" },
-              ],
+              name: "kind", label: t("clinical.record.diagnosis.kind"), type: "select", defaultValue: "PRINCIPAL",
+              options: (["PRINCIPAL", "SECUNDARIO", "DIFERENCIAL"] as const).map((value) => ({
+                value,
+                label: t(`clinical.record.diagnosis.kinds.${value}`),
+              })),
             },
             {
-              name: "certainty", label: "Certeza", type: "select", defaultValue: "PROVISORIO",
-              options: [
-                { value: "PROVISORIO", label: "Provisório" },
-                { value: "CONFIRMADO", label: "Confirmado" },
-              ],
+              name: "certainty", label: t("clinical.record.diagnosis.certainty"), type: "select", defaultValue: "PROVISORIO",
+              options: (["PROVISORIO", "CONFIRMADO"] as const).map((value) => ({
+                value,
+                label: t(`clinical.record.diagnosis.certainties.${value}`),
+              })),
             },
-            { name: "onsetDate", label: "Início", type: "date" },
-            { name: "notes", label: "Observações", full: true },
+            { name: "onsetDate", label: t("clinical.record.diagnosis.onset"), type: "date" },
+            { name: "notes", label: t("clinical.record.diagnosis.notes"), full: true },
           ]}
         />
       )}
@@ -155,55 +149,52 @@ export function ClinicalRecordActions({
 
       {permissions.laboratory && (
         <CadastroButton
-          label="Pedido de exame"
-          title="Solicitar exame"
-          description="O resultado fica ligado a este pedido e entra na linha temporal do paciente."
+          label={t("clinical.record.order.label")}
+          title={t("clinical.record.order.title")}
+          description={t("clinical.record.order.description")}
           variant="secondary"
           action={createDiagnosticOrderForPatient.bind(null, patientId)}
           fields={[
-            { name: "name", label: "Exame", required: true, full: true, placeholder: "Ex.: Hemograma completo" },
+            { name: "name", label: t("clinical.record.order.name"), required: true, full: true, placeholder: t("clinical.record.order.namePlaceholder") },
             {
-              name: "category", label: "Categoria", type: "select", defaultValue: "LABORATORIO",
-              options: [
-                { value: "LABORATORIO", label: "Laboratório" },
-                { value: "IMAGIOLOGIA", label: "Imagiologia" },
-                { value: "OUTRO", label: "Outro" },
-              ],
+              name: "category", label: t("clinical.record.order.category"), type: "select", defaultValue: "LABORATORIO",
+              options: (["LABORATORIO", "IMAGIOLOGIA", "OUTRO"] as const).map((value) => ({
+                value,
+                label: t(`clinical.record.order.categories.${value}`),
+              })),
             },
             {
-              name: "priority", label: "Prioridade", type: "select", defaultValue: "ROTINA",
-              options: [
-                { value: "ROTINA", label: "Rotina" },
-                { value: "URGENTE", label: "Urgente" },
-                { value: "EMERGENTE", label: "Emergente" },
-              ],
+              name: "priority", label: t("clinical.record.order.priority"), type: "select", defaultValue: "ROTINA",
+              options: (["ROTINA", "URGENTE", "EMERGENTE"] as const).map((value) => ({
+                value,
+                label: t(`clinical.record.order.priorities.${value}`),
+              })),
             },
-            { name: "code", label: "Código", placeholder: "Ex.: 58410-2 (LOINC)" },
-            { name: "notes", label: "Observações", full: true },
+            { name: "code", label: t("clinical.record.order.code"), placeholder: t("clinical.record.order.codePlaceholder") },
+            { name: "notes", label: t("clinical.record.order.notes"), full: true },
           ]}
         />
       )}
 
       {permissions.diagnosis && (
         <CadastroButton
-          label="Procedimento"
-          title="Registar procedimento"
+          label={t("clinical.record.procedure.label")}
+          title={t("clinical.record.procedure.title")}
           variant="secondary"
           action={addProcedureForPatient.bind(null, patientId)}
           fields={[
-            { name: "name", label: "Procedimento", required: true, full: true },
+            { name: "name", label: t("clinical.record.procedure.name"), required: true, full: true },
             {
-              name: "status", label: "Estado", type: "select", defaultValue: "REALIZADO",
-              options: [
-                { value: "REALIZADO", label: "Realizado" },
-                { value: "PLANEADO", label: "Planeado" },
-                { value: "CANCELADO", label: "Cancelado" },
-              ],
+              name: "status", label: t("clinical.record.procedure.status"), type: "select", defaultValue: "REALIZADO",
+              options: (["REALIZADO", "PLANEADO", "CANCELADO"] as const).map((value) => ({
+                value,
+                label: t(`clinical.record.procedure.statuses.${value}`),
+              })),
             },
-            { name: "performedAt", label: "Data", type: "date" },
-            { name: "description", label: "Descrição", full: true },
-            { name: "outcome", label: "Resultado", full: true },
-            { name: "complications", label: "Complicações", full: true },
+            { name: "performedAt", label: t("clinical.record.procedure.date"), type: "date" },
+            { name: "description", label: t("clinical.record.procedure.descriptionField"), full: true },
+            { name: "outcome", label: t("clinical.record.procedure.outcome"), full: true },
+            { name: "complications", label: t("clinical.record.procedure.complications"), full: true },
           ]}
         />
       )}

@@ -16,6 +16,8 @@ import {
   type PatientIdentity,
 } from "@/lib/domain/patient-matching";
 import { normalizePatientProfile, type PatientProfileValues } from "@/server/patient-data";
+import { getTranslator } from "@/i18n/server";
+import type { MessageKey } from "@/i18n/types";
 
 /**
  * Cadastro único do paciente: criação com verificação de duplicados, edição do
@@ -47,7 +49,8 @@ export async function findDuplicateCandidates(
   values: PatientProfileValues & { documentNumbers?: string[]; excludeId?: string },
 ): Promise<RegistryResult<{ candidates: DuplicateSuggestion[] }>> {
   const user = await requireUser();
-  if (!can(user.role, "patient.view")) return { error: "Sem permissão." };
+  const t = await getTranslator();
+  if (!can(user.role, "patient.view")) return { error: t("patients.errors.noPermission") };
 
   const key = nameKey(values.name);
   const tokens = key.split(" ").filter((t) => t.length >= 4).slice(0, 4);
@@ -96,6 +99,8 @@ export async function findDuplicateCandidates(
   const ranked = rankDuplicates(
     subject,
     rows.map((r) => ({ ...r, documentNumbers: r.identityDocuments.map((d) => d.number) })),
+    undefined,
+    t,
   );
   const byId = new Map(rows.map((r) => [r.id, r]));
 
@@ -117,7 +122,7 @@ export async function findDuplicateCandidates(
 }
 
 const createSchema = z.object({
-  name: z.string().trim().min(3, "Nome demasiado curto."),
+  name: z.string().trim().min(3, "patients.errors.nameTooShort"),
   /** Confirmação explícita quando existe um duplicado muito provável. */
   confirmPossibleDuplicate: z.boolean().optional().default(false),
 });
@@ -126,15 +131,16 @@ export async function createPatientProfile(
   values: PatientProfileValues & { confirmPossibleDuplicate?: boolean },
 ): Promise<RegistryResult<{ id: string; code: string; duplicates?: DuplicateSuggestion[] }>> {
   const user = await requireUser();
-  if (!can(user.role, "patient.manage")) return { error: "Sem permissão para criar pacientes." };
+  const t = await getTranslator();
+  if (!can(user.role, "patient.manage")) return { error: t("patients.errors.noPermissionCreate") };
   const parsed = createSchema.safeParse({ name: values.name, confirmPossibleDuplicate: values.confirmPossibleDuplicate });
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: t(parsed.error.issues[0]!.message as MessageKey) };
 
   let normalized: ReturnType<typeof normalizePatientProfile>;
   try {
     normalized = normalizePatientProfile(values);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Dados inválidos." };
+    return { error: error instanceof Error ? error.message : t("patients.errors.invalidData") };
   }
 
   if (!parsed.data.confirmPossibleDuplicate) {
@@ -143,9 +149,9 @@ export async function createPatientProfile(
       const strong = check.candidates.filter((c) => c.score >= DUPLICATE_THRESHOLD);
       if (strong.length) {
         return {
-          error:
-            `Possível duplicado: ${strong.map((c) => `${c.name} (${c.code})`).join(", ")}. ` +
-            "Abra o registo existente ou confirme que se trata de outra pessoa.",
+          error: t("patients.errors.possibleDuplicate", {
+            candidates: strong.map((c) => `${c.name} (${c.code})`).join(", "),
+          }),
         };
       }
     }
@@ -179,7 +185,8 @@ export async function updatePatientProfile(
   values: PatientProfileValues & { expectedVersion?: number },
 ): Promise<RegistryResult<{ id: string; conflict?: true }>> {
   const user = await requireUser();
-  if (!can(user.role, "patient.manage")) return { error: "Sem permissão para editar pacientes." };
+  const t = await getTranslator();
+  if (!can(user.role, "patient.manage")) return { error: t("patients.errors.noPermissionEdit") };
 
   const existing = await prisma.patient.findFirst({
     where: { id: patientId, clinicId: user.clinicId },
@@ -189,21 +196,19 @@ export async function updatePatientProfile(
       emergencyContactName: true, emergencyContactPhone: true, chronicConditions: true,
     },
   });
-  if (!existing) return { error: "Paciente não encontrado." };
+  if (!existing) return { error: t("patients.errors.notFound") };
 
   // Bloqueio optimista: dois profissionais no mesmo prontuário não se
   // sobrepõem em silêncio.
   if (values.expectedVersion !== undefined && values.expectedVersion !== existing.version) {
-    return {
-      error: "Este registo foi alterado por outro utilizador entretanto. Recarregue a página para ver a versão actual.",
-    };
+    return { error: t("patients.errors.versionConflict") };
   }
 
   let normalized: ReturnType<typeof normalizePatientProfile>;
   try {
     normalized = normalizePatientProfile(values);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Dados inválidos." };
+    return { error: error instanceof Error ? error.message : t("patients.errors.invalidData") };
   }
 
   const updated = await prisma.patient.update({
@@ -233,7 +238,7 @@ export async function updatePatientProfile(
 const documentSchema = z.object({
   patientId: z.string().min(1),
   type: z.enum(["BI", "PASSAPORTE", "DIRE", "NUIT", "CARTA_CONDUCAO", "CEDULA", "OUTRO"]),
-  number: z.string().trim().min(3, "Indique o número do documento."),
+  number: z.string().trim().min(3, "patients.errors.documentNumber"),
   issuer: z.string().trim().max(120).optional().default(""),
   issuedAt: z.string().optional().default(""),
   expiresAt: z.string().optional().default(""),
@@ -244,15 +249,16 @@ export type IdentityDocumentValues = z.input<typeof documentSchema>;
 
 export async function addIdentityDocument(values: IdentityDocumentValues): Promise<RegistryResult<{ id: string }>> {
   const user = await requireUser();
-  if (!can(user.role, "patient.manage")) return { error: "Sem permissão." };
+  const t = await getTranslator();
+  if (!can(user.role, "patient.manage")) return { error: t("patients.errors.noPermission") };
   const parsed = documentSchema.safeParse(values);
-  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  if (!parsed.success) return { error: t(parsed.error.issues[0]!.message as MessageKey) };
 
   const patient = await prisma.patient.findFirst({
     where: { id: parsed.data.patientId, clinicId: user.clinicId },
     select: { id: true },
   });
-  if (!patient) return { error: "Paciente não encontrado." };
+  if (!patient) return { error: t("patients.errors.notFound") };
 
   const number = parsed.data.number.toUpperCase();
   const clash = await prisma.patientIdentityDocument.findFirst({
@@ -260,9 +266,9 @@ export async function addIdentityDocument(values: IdentityDocumentValues): Promi
     select: { id: true, patientId: true },
   });
   if (clash && clash.patientId !== patient.id) {
-    return { error: "Este documento já está associado a outro paciente." };
+    return { error: t("patients.errors.documentOtherPatient") };
   }
-  if (clash) return { error: "Documento já registado para este paciente." };
+  if (clash) return { error: t("patients.errors.documentDuplicate") };
 
   const toDate = (raw: string) => (raw ? new Date(`${raw}T00:00:00.000Z`) : null);
   const created = await prisma.$transaction(async (tx) => {
@@ -297,12 +303,13 @@ export async function addIdentityDocument(values: IdentityDocumentValues): Promi
 
 export async function removeIdentityDocument(id: string): Promise<RegistryResult> {
   const user = await requireUser();
-  if (!can(user.role, "patient.manage")) return { error: "Sem permissão." };
+  const t = await getTranslator();
+  if (!can(user.role, "patient.manage")) return { error: t("patients.errors.noPermission") };
   const existing = await prisma.patientIdentityDocument.findFirst({
     where: { id, clinicId: user.clinicId },
     select: { id: true, patientId: true, type: true, number: true },
   });
-  if (!existing) return { error: "Documento não encontrado." };
+  if (!existing) return { error: t("patients.errors.documentNotFound") };
 
   await prisma.patientIdentityDocument.delete({ where: { id: existing.id } });
   await auditAs(actor(user), {
@@ -325,19 +332,20 @@ export async function removeIdentityDocument(id: string): Promise<RegistryResult
  */
 export async function mergePatients(sourceId: string, targetId: string, reason: string): Promise<RegistryResult> {
   const user = await requireUser();
+  const t = await getTranslator();
   if (!ADMINISTRATIVE_ROLES.includes(user.role)) {
-    return { error: "Apenas um administrador pode fundir registos de pacientes." };
+    return { error: t("patients.errors.mergeAdminOnly") };
   }
-  if (sourceId === targetId) return { error: "Escolha dois pacientes diferentes." };
-  if (!reason.trim()) return { error: "Indique o motivo da fusão." };
+  if (sourceId === targetId) return { error: t("patients.errors.mergeSamePatient") };
+  if (!reason.trim()) return { error: t("patients.errors.mergeReason") };
 
   const [source, target] = await Promise.all([
     prisma.patient.findFirst({ where: { id: sourceId, clinicId: user.clinicId }, select: { id: true, code: true, name: true, isActive: true, mergedIntoId: true } }),
     prisma.patient.findFirst({ where: { id: targetId, clinicId: user.clinicId }, select: { id: true, code: true, name: true, mergedIntoId: true } }),
   ]);
-  if (!source || !target) return { error: "Paciente não encontrado." };
-  if (source.mergedIntoId) return { error: "O registo de origem já foi fundido." };
-  if (target.mergedIntoId) return { error: "O registo de destino já foi fundido noutro." };
+  if (!source || !target) return { error: t("patients.errors.notFound") };
+  if (source.mergedIntoId) return { error: t("patients.errors.mergeSourceMerged") };
+  if (target.mergedIntoId) return { error: t("patients.errors.mergeTargetMerged") };
 
   const scope = { clinicId: user.clinicId, patientId: source.id };
   const to = { patientId: target.id };

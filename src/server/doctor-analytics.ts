@@ -6,6 +6,8 @@ import {
 import { prisma } from "@/lib/prisma";
 import { pct } from "@/lib/utils";
 import { computeOccupancy, type AppointmentFact } from "@/lib/domain/occupancy";
+import { intlLocale } from "@/lib/format";
+import { getUiContext } from "@/i18n/server";
 
 const SLOTS_PER_DAY = 13;
 const SLOT_MIN = 30;
@@ -85,7 +87,7 @@ const BLOCKS = [
   { label: "12–14", from: 12, to: 14, slots: 2 }, // lunch 12:30–13:30
   { label: "14–16", from: 14, to: 16, slots: 4 },
 ];
-const WD = ["Seg", "Ter", "Qua", "Qui", "Sex"];
+const WD = ["mon", "tue", "wed", "thu", "fri"] as const;
 
 export async function getDoctorDetail(clinicId: string, doctorId: string, includeFinancials = true) {
   const doctor = await prisma.doctor.findFirst({
@@ -93,6 +95,7 @@ export async function getDoctorDetail(clinicId: string, doctorId: string, includ
     include: { specialty: true, schedules: { orderBy: { weekday: "asc" } } },
   });
   if (!doctor) return null;
+  const { t, locale } = await getUiContext();
 
   const now = new Date();
   const mStart = startOfMonth(now);
@@ -135,8 +138,8 @@ export async function getDoctorDetail(clinicId: string, doctorId: string, includ
     const wd = day.getDay();
     if (wd >= 1 && wd <= 5) weekdayCount[wd - 1]++;
   }
-  const heat = WD.map((label, col) => ({
-    label,
+  const heat = WD.map((day, col) => ({
+    label: t(`doctors.weekdays.${day}`),
     cells: BLOCKS.map((b) => {
       const booked = hmAppts.filter((a) => {
         const h = a.startAt.getHours() + 2; // UTC -> Maputo
@@ -159,8 +162,9 @@ export async function getDoctorDetail(clinicId: string, doctorId: string, includ
     const k = format(a.startAt, "yyyy-MM");
     if (byMonth.has(k)) byMonth.set(k, byMonth.get(k)! + 1);
   }
+  const monthLabel = new Intl.DateTimeFormat(intlLocale(locale), { month: "short", timeZone: "UTC" });
   const trend = months.map((m) => ({
-    label: format(new Date(m + "-01"), "LLL").replace(/^./, (c) => c.toUpperCase()),
+    label: monthLabel.format(new Date(m + "-01")).replace(/\.$/, "").replace(/^./, (c) => c.toUpperCase()),
     value: byMonth.get(m)!,
   }));
 

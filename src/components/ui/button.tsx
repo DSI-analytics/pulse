@@ -2,24 +2,30 @@ import * as React from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
+/**
+ * Botões em cápsula com cores sólidas e nítidas.
+ *
+ * - Estados de hover e desactivado trocam para tons SÓLIDOS — nunca opacidade
+ *   nem filtros (`brightness`), que degradam a nitidez das letras.
+ * - O brilho neon é uma sombra por trás do botão, não um efeito sobre o texto.
+ */
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0",
+  "press inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium antialiased focus-visible:outline-none disabled:pointer-events-none disabled:text-subtle-foreground disabled:shadow-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
-        secondary:
-          "bg-surface text-foreground border border-border-strong hover:bg-surface-2 hover:border-primary/40",
-        ghost: "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-        outline: "border border-border-strong bg-transparent hover:bg-surface-2",
-        danger: "bg-danger text-white hover:bg-danger/90 shadow-sm",
-        link: "text-primary underline-offset-4 hover:underline",
+        default: "bg-primary text-primary-foreground shadow-glow hover:bg-primary-hover disabled:bg-fill-strong",
+        secondary: "border border-border bg-fill text-foreground hover:border-border-strong hover:bg-fill-strong disabled:bg-fill-subtle",
+        ghost: "text-muted-foreground hover:bg-fill hover:text-foreground",
+        outline: "border border-border-strong text-foreground hover:bg-fill disabled:border-border",
+        danger: "bg-danger text-danger-foreground shadow-glow-danger hover:bg-danger-hover disabled:bg-fill-strong",
+        link: "rounded-md text-primary underline-offset-4 hover:underline active:translate-y-0",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-[13px]",
-        lg: "h-11 rounded-md px-6 text-base",
-        icon: "h-9 w-9",
+        default: "h-10 px-[18px]",
+        sm: "h-8 px-3.5 text-[13px]",
+        lg: "h-12 px-6 text-[15px]",
+        icon: "size-10",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

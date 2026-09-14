@@ -1,12 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Send, Sparkles, ShieldAlert, User2 } from "lucide-react";
+import { MessageSquarePlus, Send, Sparkles, ShieldAlert, User2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendChart } from "@/components/charts/trend-chart";
+import { useT } from "@/i18n/client";
 
 /**
  * Chat de Insights.
@@ -14,18 +15,26 @@ import { TrendChart } from "@/components/charts/trend-chart";
  * O componente renderiza APENAS texto e valores numéricos vindos do backend.
  * Nada é interpretado como HTML e nenhum código produzido pelo modelo é
  * executado: o gráfico é construído a partir de um descritor validado
- * (`{ type, data: [{label, value}] }`) com os componentes já existentes no
- * sistema.
+ * (`{ type, data: [{label, value}] }`) com os componentes já existentes.
+ *
+ * A conversa guarda o contexto da última resposta (métrica e período) para
+ * que continuações como "e no mês passado?" funcionem.
  */
 
 interface ChartSpec {
   type: "line" | "bar" | "none";
-  metric: string;
+  metric: string | null;
   data: { label: string; value: number }[];
   unit: "count" | "currency" | "percent" | "minutes";
 }
 
+interface Suggestion {
+  question: string;
+  label: string;
+}
+
 interface AnswerPayload {
+  kind: "metric" | "denied" | "unknown" | "clinical" | "forecast" | "smalltalk";
   answer: string;
   metric: {
     id: string;
@@ -41,6 +50,8 @@ interface AnswerPayload {
   visualization: ChartSpec;
   periodLabel: string;
   denied?: string;
+  suggestions?: Suggestion[];
+  context?: { metric: string | null; period: string };
 }
 
 type Turn =
@@ -51,11 +62,14 @@ type Turn =
 let turnCounter = 0;
 const nextId = () => `t${(turnCounter += 1)}`;
 
-export function InsightsChat({ suggestions }: { suggestions: string[] }) {
+export function InsightsChat({ suggestions }: { suggestions: Suggestion[] }) {
+  const t = useT();
   const [turns, setTurns] = React.useState<Turn[]>([]);
   const [question, setQuestion] = React.useState("");
   const [pending, setPending] = React.useState(false);
+  const contextRef = React.useRef<AnswerPayload["context"] | null>(null);
   const endRef = React.useRef<HTMLDivElement>(null);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -71,42 +85,70 @@ export function InsightsChat({ suggestions }: { suggestions: string[] }) {
       const response = await fetch("/api/insights/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: trimmed }),
+        body: JSON.stringify({ question: trimmed, context: contextRef.current ?? undefined }),
       });
       const data = await response.json();
       if (!response.ok) {
-        setTurns((prev) => [...prev, { role: "error", id: nextId(), text: data?.error ?? "Não foi possível obter a resposta." }]);
+        setTurns((prev) => [...prev, { role: "error", id: nextId(), text: data?.error ?? t("insights.chat.fetchError") }]);
       } else {
-        setTurns((prev) => [...prev, { role: "assistant", id: nextId(), payload: data as AnswerPayload }]);
+        const payload = data as AnswerPayload;
+        if (payload.context) contextRef.current = payload.context;
+        setTurns((prev) => [...prev, { role: "assistant", id: nextId(), payload }]);
       }
     } catch {
-      setTurns((prev) => [...prev, { role: "error", id: nextId(), text: "Falha de ligação. Tente novamente." }]);
+      setTurns((prev) => [...prev, { role: "error", id: nextId(), text: t("insights.chat.networkError") }]);
     } finally {
       setPending(false);
+      inputRef.current?.focus();
     }
-  }, [pending]);
+  }, [pending, t]);
+
+  function reset() {
+    contextRef.current = null;
+    setTurns([]);
+    setQuestion("");
+    inputRef.current?.focus();
+  }
+
+  const lastAssistantId = [...turns].reverse().find((turn) => turn.role === "assistant")?.id;
 
   return (
     <div className="flex h-full flex-col gap-3">
-      <div className="min-h-[260px] flex-1 space-y-3 overflow-y-auto" role="log" aria-live="polite" aria-label="Conversa com o assistente">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          ask(question);
+        }}
+        className="glass-thin flex shrink-0 items-center gap-2 rounded-[20px] p-2 transition-[border-color,box-shadow] duration-300 focus-within:border-primary focus-within:shadow-[0_0_0_3px_var(--primary-muted)]"
+      >
+        {turns.length > 0 && (
+          <Button type="button" variant="ghost" size="icon" className="size-11 shrink-0 bg-fill" onClick={reset} aria-label={t("insights.chat.newConversation")} title={t("insights.chat.newConversation")}>
+            <MessageSquarePlus className="size-4" />
+          </Button>
+        )}
+        <div className="relative min-w-0 flex-1">
+          <Sparkles className="pointer-events-none absolute left-4 top-1/2 z-10 size-4 -translate-y-1/2 text-primary" aria-hidden />
+          <Input
+            ref={inputRef}
+            className="h-12 border-primary-edge bg-surface pl-11 pr-4 text-[15px] shadow-card placeholder:text-muted-foreground hover:border-primary focus-visible:border-primary focus-visible:bg-surface focus-visible:shadow-[0_0_0_3px_var(--primary-muted)]"
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            placeholder={t("insights.chat.placeholder")}
+            aria-label={t("insights.chat.questionLabel")}
+            maxLength={500}
+            disabled={pending}
+          />
+        </div>
+        <Button type="submit" size="icon" className="size-12 shrink-0" aria-label={t("insights.chat.send")} disabled={pending || !question.trim()}>
+          <Send className="size-4" />
+        </Button>
+      </form>
+
+      <div className="min-h-[260px] flex-1 space-y-3 overflow-y-auto" role="log" aria-live="polite" aria-label={t("insights.chat.logLabel")}>
         {turns.length === 0 && (
           <div className="space-y-2">
-            <p className="text-[13px] text-muted-foreground">
-              Pergunte em linguagem natural sobre os indicadores da sua instituição.
-            </p>
-            <ul className="space-y-1.5">
-              {suggestions.map((s) => (
-                <li key={s}>
-                  <button
-                    type="button"
-                    onClick={() => ask(s)}
-                    className="w-full rounded-md border border-dashed border-border-strong bg-surface-2/40 px-3 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
-                  >
-                    {s}
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <p className="text-[13px] text-muted-foreground">{t("insights.chat.intro")}</p>
+            <SuggestionList suggestions={suggestions} onPick={ask} disabled={pending} />
           </div>
         )}
 
@@ -123,51 +165,67 @@ export function InsightsChat({ suggestions }: { suggestions: string[] }) {
           }
           if (turn.role === "error") {
             return (
-              <p key={turn.id} role="alert" className="rounded-lg border border-danger/40 bg-danger-muted/40 px-3 py-2 text-[13px] text-danger">
+              <p key={turn.id} role="alert" className="rounded-lg border border-danger-edge bg-danger-muted px-3 py-2 text-[13px] text-danger">
                 {turn.text}
               </p>
             );
           }
-          return <AssistantTurn key={turn.id} payload={turn.payload} />;
+          return (
+            <AssistantTurn
+              key={turn.id}
+              payload={turn.payload}
+              showSuggestions={turn.id === lastAssistantId && !pending}
+              onPick={ask}
+            />
+          );
         })}
 
         {pending && (
           <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
-            <Sparkles className="size-3.5 animate-pulse text-primary" aria-hidden /> A calcular…
+            <Sparkles className="size-3.5 animate-pulse text-primary" aria-hidden /> {t("insights.chat.thinking")}
           </p>
         )}
         <div ref={endRef} />
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          ask(question);
-        }}
-        className="flex gap-2"
-      >
-        <Input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ex.: quantos pacientes novos tivemos este mês?"
-          aria-label="Pergunta"
-          maxLength={500}
-          disabled={pending}
-        />
-        <Button type="submit" size="icon" aria-label="Enviar pergunta" disabled={pending || !question.trim()}>
-          <Send className="size-4" />
-        </Button>
-      </form>
     </div>
   );
 }
 
-function AssistantTurn({ payload }: { payload: AnswerPayload }) {
+function SuggestionList({ suggestions, onPick, disabled }: { suggestions: Suggestion[]; onPick: (question: string) => void; disabled?: boolean }) {
+  return (
+    <ul className="space-y-1.5">
+      {suggestions.map((suggestion) => (
+        <li key={suggestion.question}>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onPick(suggestion.question)}
+            className="w-full rounded-md border border-dashed border-border-strong bg-fill-subtle px-3 py-2 text-left text-[13px] text-muted-foreground transition-colors hover:border-primary-edge hover:text-foreground disabled:cursor-not-allowed"
+          >
+            {suggestion.label}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function AssistantTurn({
+  payload,
+  showSuggestions,
+  onPick,
+}: {
+  payload: AnswerPayload;
+  showSuggestions: boolean;
+  onPick: (question: string) => void;
+}) {
+  const t = useT();
   const { metric, visualization, table } = payload;
   const kind = visualization.unit === "currency" ? "mzn" : "int";
 
   return (
-    <div className="space-y-2.5 rounded-lg border border-border bg-surface-2/40 p-3">
+    <div className="space-y-2.5 rounded-lg border border-border bg-fill-subtle p-3">
       <p className="flex items-start gap-2 text-sm">
         <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
         <span className="whitespace-pre-wrap">{payload.answer}</span>
@@ -175,7 +233,7 @@ function AssistantTurn({ payload }: { payload: AnswerPayload }) {
 
       {payload.denied && (
         <p className="flex items-center gap-1.5 text-xs text-warning">
-          <ShieldAlert className="size-3.5" aria-hidden /> Indicador restrito: {payload.denied}
+          <ShieldAlert className="size-3.5" aria-hidden /> {t("insights.chat.restricted", { metric: payload.denied })}
         </p>
       )}
 
@@ -187,8 +245,7 @@ function AssistantTurn({ payload }: { payload: AnswerPayload }) {
           </div>
           {metric.changePct !== undefined && (
             <Badge variant={metric.changePct >= 0 ? "success" : "danger"}>
-              {metric.changePct >= 0 ? "+" : ""}
-              {metric.changePct}% vs. período anterior
+              {t("insights.chat.vsPrevious", { value: `${metric.changePct >= 0 ? "+" : ""}${metric.changePct}` })}
             </Badge>
           )}
           <Badge variant="neutral">{payload.periodLabel}</Badge>
@@ -224,6 +281,15 @@ function AssistantTurn({ payload }: { payload: AnswerPayload }) {
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {showSuggestions && payload.suggestions && payload.suggestions.length > 0 && (
+        <div className="space-y-1.5 border-t border-border pt-2.5">
+          <p className="text-[12px] font-medium text-muted-foreground">
+            {payload.kind === "metric" ? t("insights.chat.followUps") : t("insights.chat.tryAsking")}
+          </p>
+          <SuggestionList suggestions={payload.suggestions} onPick={onPick} />
         </div>
       )}
     </div>

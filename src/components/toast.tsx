@@ -2,6 +2,7 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, AlertTriangle, Info, X } from "lucide-react";
+import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 
 type ToastKind = "success" | "error" | "info";
@@ -18,6 +19,7 @@ export function useToast() {
 }
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const translate = useT();
   const [toasts, setToasts] = React.useState<Toast[]>([]);
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => {
@@ -32,32 +34,34 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const Icon = { success: CheckCircle2, error: AlertTriangle, info: Info };
+  const tone = { success: "bg-success-muted text-success", error: "bg-danger-muted text-danger", info: "bg-info-muted text-info" };
 
   return (
     <ToastCtx.Provider value={push}>
       {children}
       {mounted &&
         createPortal(
-          <div className="fixed bottom-5 left-1/2 z-[100] flex -translate-x-1/2 flex-col items-center gap-2">
+          // Acima da barra de navegação móvel; no desktop, junto ao fundo.
+          <div
+            className="pointer-events-none fixed inset-x-0 bottom-28 z-[100] flex flex-col items-center gap-2 px-3 lg:bottom-6"
+            aria-live="polite"
+          >
             {toasts.map((t) => {
               const I = Icon[t.kind];
               return (
                 <div
                   key={t.id}
-                  className="animate-in flex items-center gap-2.5 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium shadow-lg"
+                  role="status"
+                  className="glass-strong animate-toast pointer-events-auto flex max-w-full items-center gap-2.5 rounded-full py-2 pl-2 pr-2 text-sm font-medium sm:max-w-md"
                 >
-                  <I
-                    className={cn(
-                      "size-4",
-                      t.kind === "success" && "text-success",
-                      t.kind === "error" && "text-danger",
-                      t.kind === "info" && "text-info",
-                    )}
-                  />
-                  <span>{t.message}</span>
+                  <span className={cn("flex size-7 shrink-0 items-center justify-center rounded-full", tone[t.kind])}>
+                    <I className="size-4" />
+                  </span>
+                  <span className="min-w-0 pr-1">{t.message}</span>
                   <button
                     onClick={() => setToasts((x) => x.filter((y) => y.id !== t.id))}
-                    className="text-subtle-foreground hover:text-foreground"
+                    className="press flex size-7 shrink-0 items-center justify-center rounded-full text-subtle-foreground hover:bg-fill-strong hover:text-foreground"
+                    aria-label={translate("common.close")}
                   >
                     <X className="size-3.5" />
                   </button>

@@ -1,8 +1,8 @@
 import "server-only";
 import { startOfMonth, endOfMonth, subMonths } from "date-fns";
 import { prisma } from "@/lib/prisma";
-import { formatMZN } from "@/lib/money";
 import { pct } from "@/lib/utils";
+import { getFormatters, getTranslator } from "@/i18n/server";
 
 export interface Insight {
   severity: "INFO" | "AVISO" | "CRITICO";
@@ -17,6 +17,7 @@ export interface Insight {
  * is computed, not generated, and never exposes patient-level detail.
  */
 export async function getInsights(clinicId: string): Promise<Insight[]> {
+  const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
   const now = new Date();
   const mStart = startOfMonth(now);
   const mEnd = endOfMonth(now);
@@ -58,11 +59,14 @@ export async function getInsights(clinicId: string): Promise<Insight[]> {
   const rP = revP._sum.amount ?? 0;
   if (rP > 0) {
     const delta = ((rM - rP) / rP) * 100;
+    const deltaText = Math.abs(delta).toFixed(1);
     insights.push({
       severity: delta >= 0 ? "INFO" : "AVISO",
       kind: "receita",
-      title: `Receita ${delta >= 0 ? "cresceu" : "caiu"} ${Math.abs(delta).toFixed(1)}% face ao mês anterior`,
-      body: `Este mês: ${formatMZN(rM)} · mês anterior: ${formatMZN(rP)}.`,
+      title: delta >= 0
+        ? t("insights.feedItems.revenueUpTitle", { delta: deltaText })
+        : t("insights.feedItems.revenueDownTitle", { delta: deltaText }),
+      body: t("insights.feedItems.revenueBody", { current: f.money(rM), previous: f.money(rP) }),
     });
   }
 
@@ -74,11 +78,11 @@ export async function getInsights(clinicId: string): Promise<Insight[]> {
     insights.push({
       severity: nsM >= 12 ? "CRITICO" : up ? "AVISO" : "INFO",
       kind: "faltas",
-      title: `Taxa de faltas em ${nsM}% este mês`,
+      title: t("insights.feedItems.noShowTitle", { rate: nsM }),
       body:
         nsP > 0
-          ? `${up ? "Subiu" : "Desceu"} face aos ${nsP}% do mês anterior. Confirmações por SMS reduzem faltas.`
-          : "Ative lembretes automáticos para reduzir as faltas.",
+          ? t(up ? "insights.feedItems.noShowUpBody" : "insights.feedItems.noShowDownBody", { previous: nsP })
+          : t("insights.feedItems.noShowRemindersBody"),
     });
   }
 
@@ -90,8 +94,11 @@ export async function getInsights(clinicId: string): Promise<Insight[]> {
     insights.push({
       severity: "INFO",
       kind: "procura",
-      title: `${spec?.name ?? "Especialidade"} concentra ${pct(top._count._all, total)}% das marcações`,
-      body: "É a área com maior procura este mês — avalie reforçar a agenda.",
+      title: t("insights.feedItems.demandTitle", {
+        specialty: spec?.name ?? t("insights.feedItems.specialtyFallback"),
+        share: pct(top._count._all, total),
+      }),
+      body: t("insights.feedItems.demandBody"),
     });
   }
 
@@ -109,8 +116,11 @@ export async function getInsights(clinicId: string): Promise<Insight[]> {
     insights.push({
       severity: "AVISO",
       kind: "recebiveis",
-      title: `${plan?.insuranceCompany.name ?? "Seguradora"} representa ${pct(top.ar, totalAr)}% das contas a receber`,
-      body: `Total por receber de seguradoras: ${formatMZN(totalAr)}.`,
+      title: t("insights.feedItems.receivablesTitle", {
+        insurer: plan?.insuranceCompany.name ?? t("insights.feedItems.insurerFallback"),
+        share: pct(top.ar, totalAr),
+      }),
+      body: t("insights.feedItems.receivablesBody", { total: f.money(totalAr) }),
     });
   }
 
@@ -120,8 +130,8 @@ export async function getInsights(clinicId: string): Promise<Insight[]> {
     insights.push({
       severity: i.currentStock === 0 ? "CRITICO" : "AVISO",
       kind: "stock",
-      title: `${i.name} ${i.currentStock === 0 ? "esgotado" : "abaixo do stock mínimo"}`,
-      body: `Stock atual ${i.currentStock} · mínimo ${i.minStock}. Considere encomendar.`,
+      title: t(i.currentStock === 0 ? "insights.feedItems.outOfStockTitle" : "insights.feedItems.lowStockTitle", { item: i.name }),
+      body: t("insights.feedItems.stockBody", { current: i.currentStock, min: i.minStock }),
     });
   }
 
@@ -131,8 +141,8 @@ export async function getInsights(clinicId: string): Promise<Insight[]> {
     insights.push({
       severity: days <= 15 ? "AVISO" : "INFO",
       kind: "validade",
-      title: `${i.name} expira em ${days} dias`,
-      body: "Priorize o consumo deste lote antes do fim do prazo.",
+      title: t("insights.feedItems.expiryTitle", { item: i.name, days }),
+      body: t("insights.feedItems.expiryBody"),
     });
   }
 
