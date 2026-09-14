@@ -1,8 +1,8 @@
 "use client";
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
-import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Loader2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav";
 import { PulseMark } from "@/components/pulse-mark";
 import { useT } from "@/i18n/client";
@@ -10,6 +10,29 @@ import { cn } from "@/lib/utils";
 
 export function isNavActive(href: string, pathname: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
+}
+
+function NavPendingFeedback({ collapsed, label, loadingLabel }: { collapsed: boolean; label: string; loadingLabel: string }) {
+  const { pending } = useLinkStatus();
+  if (!pending) return null;
+
+  return (
+    <span
+      role="status"
+      aria-label={`${loadingLabel} ${label}`}
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      }}
+      className={cn(
+        "animate-pop absolute inset-0 z-20 flex cursor-wait items-center rounded-[12px] border border-primary-edge bg-primary-muted px-3 text-primary shadow-glow",
+        collapsed ? "justify-center" : "gap-3",
+      )}
+    >
+      <Loader2 className="size-[18px] shrink-0 animate-spin" aria-hidden />
+      {!collapsed && <span className="truncate" aria-hidden>{loadingLabel}</span>}
+    </span>
+  );
 }
 
 /**
@@ -156,6 +179,7 @@ export function AppSidebar({
                         >
                           <Icon className={cn("size-[18px] shrink-0", active ? "text-primary" : "text-subtle-foreground")} />
                           {!collapsed && <span className="truncate">{label}</span>}
+                          <NavPendingFeedback collapsed={collapsed} label={label} loadingLabel={t("common.loading")} />
                         </Link>
                       </li>
                     );

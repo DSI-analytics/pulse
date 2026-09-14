@@ -13,6 +13,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { NotificationsMenu, type NotificationView } from "@/components/notifications-menu";
 import { getVisibleNotifications } from "@/server/notifications";
+import { Loader2 } from "lucide-react";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -38,6 +39,15 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="relative flex min-h-dvh">
+      <div className="dashboard-reveal pointer-events-none fixed inset-0 z-[150] flex items-center justify-center bg-background p-6" aria-hidden>
+        <div className="glass-strong flex min-w-52 flex-col items-center rounded-[28px] px-8 py-7 text-center">
+          <div className="flex size-14 items-center justify-center rounded-[18px] bg-primary shadow-glow">
+            <PulseMark className="size-8 text-primary-foreground" />
+          </div>
+          <p className="mt-4 font-display text-lg font-semibold">Pulso</p>
+          <Loader2 className="mt-3 size-5 animate-spin text-primary" />
+        </div>
+      </div>
       <AppSidebar allowed={allowed} clinicName={clinic?.name ?? t("common.clinicFallback")} initiallyCollapsed={initiallyCollapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Barra superior flutuante em vidro: o conteúdo desliza por baixo dela. */}

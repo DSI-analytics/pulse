@@ -6,6 +6,7 @@ import { loginAction } from "@/server/auth-actions";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { PulseMark } from "@/components/pulse-mark";
 import { useT } from "@/i18n/client";
 
 export function LoginForm() {
@@ -32,6 +33,24 @@ export function LoginForm() {
         {pending && <Loader2 className="size-4 animate-spin" />}
         {t("auth.login.submit")}
       </Button>
+      {pending && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="animate-auth-cover fixed inset-0 z-[200] flex items-center justify-center bg-background p-6"
+        >
+          <div className="glass-strong animate-sheet flex min-w-52 flex-col items-center rounded-[28px] px-8 py-7 text-center">
+            <div className="flex size-14 items-center justify-center rounded-[18px] bg-primary shadow-glow">
+              <PulseMark className="size-8 text-primary-foreground" />
+            </div>
+            <p className="mt-4 font-display text-lg font-semibold">Pulso</p>
+            <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="size-4 animate-spin text-primary" aria-hidden />
+              {t("common.loading")}
+            </p>
+          </div>
+        </div>
+      )}
     </form>
   );
 }
