@@ -521,6 +521,44 @@ svg {
   to { background-position: 200% 0; }
 }
 
+@keyframes pulse-line-trace {
+  0% {
+    stroke-dashoffset: 1;
+    opacity: 0;
+  }
+  8% { opacity: 1; }
+  64% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  78%,
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes navigation-feedback-in {
+  0%, 35% {
+    opacity: 0;
+    transform: translate(-50%, -8px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.pulse-line-base {
+  opacity: 0.28;
+}
+
+.pulse-line-trace {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
 .dashboard-reveal {
   visibility: hidden;
 }
@@ -555,6 +593,14 @@ svg {
     animation: toast-in var(--dur-slow) var(--ease-spring) both;
   }
 
+  .pulse-line-trace {
+    animation: pulse-line-trace 2.15s linear infinite;
+  }
+
+  .navigation-feedback {
+    animation: navigation-feedback-in 260ms var(--ease-out) both;
+  }
+
   .page-enter > * {
     animation: rise var(--dur-slow) var(--ease-out) both;
   }
@@ -568,6 +614,10 @@ svg {
       animation: sheet-up var(--dur-slow) var(--ease-spring) both;
     }
   }
+}
+
+html[data-navigation-pending="true"] a[data-navigation-pending="true"] {
+  cursor: wait;
 }
 
 @media (prefers-reduced-motion: reduce) {

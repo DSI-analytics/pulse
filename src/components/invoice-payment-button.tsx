@@ -3,7 +3,8 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Banknote, CheckCircle2, ExternalLink, Loader2 } from "lucide-react";
+import { Banknote, CheckCircle2, ExternalLink } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { registerInvoicePayment, type PaymentValues } from "@/server/billing-actions";
 import { useToast } from "@/components/toast";
 import { Button } from "@/components/ui/button";
@@ -78,7 +79,7 @@ export function InvoicePaymentButton({ invoiceId, invoiceNumber, patientOutstand
           onClose={() => !saving && setOpen(false)}
           title={receipt ? t("finance.payment.registeredTitle") : t("finance.payment.receiveTitle", { number: invoiceNumber })}
           description={receipt ? t("finance.payment.registeredDescription") : t("finance.payment.formDescription")}
-          footer={receipt ? <Button onClick={() => setOpen(false)}>{t("finance.payment.done")}</Button> : <><Button variant="ghost" onClick={() => setOpen(false)}>{t("common.cancel")}</Button><Button onClick={submit} disabled={saving}>{saving ? <Loader2 className="animate-spin" /> : <Banknote />} {t("finance.payment.submit")}</Button></>}
+          footer={receipt ? <Button onClick={() => setOpen(false)}>{t("finance.payment.done")}</Button> : <><Button variant="ghost" onClick={() => setOpen(false)}>{t("common.cancel")}</Button><Button onClick={submit} disabled={saving}>{saving ? <ProcessingPulse /> : <Banknote />} {t("finance.payment.submit")}</Button></>}
         >
           {receipt ? (
             <div className="space-y-4 text-center">

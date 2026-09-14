@@ -9,6 +9,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: { default: t("common.appTitle"), template: "%s · Pulso" },
     description: t("common.appDescription"),
+    icons: { icon: "/pulso-logo.gif", apple: "/pulso-logo.gif" },
   };
 }
 

@@ -2,9 +2,10 @@
 import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useLayoutEffect, useRef, useState } from "react";
-import { Loader2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { NAV_GROUPS, NAV_ITEMS } from "@/lib/nav";
-import { PulseMark } from "@/components/pulse-mark";
+import { PulsoLogo } from "@/components/pulso-logo";
 import { useT } from "@/i18n/client";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +30,7 @@ function NavPendingFeedback({ collapsed, label, loadingLabel }: { collapsed: boo
         collapsed ? "justify-center" : "gap-3",
       )}
     >
-      <Loader2 className="size-[18px] shrink-0 animate-spin" aria-hidden />
+      <ProcessingPulse />
       {!collapsed && <span className="truncate" aria-hidden>{loadingLabel}</span>}
     </span>
   );
@@ -113,14 +114,9 @@ export function AppSidebar({
       <div className="glass flex h-full flex-col overflow-hidden rounded-[24px]">
         <div className={cn("flex h-16 shrink-0 items-center", collapsed ? "justify-center px-2" : "gap-2.5 pl-4 pr-2.5")}>
           {!collapsed && (
-            <div className="flex min-w-0 flex-1 items-center gap-2.5">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-[11px] bg-primary shadow-glow">
-                <PulseMark className="size-5 text-primary-foreground" />
-              </div>
-              <div className="min-w-0">
-                <p className="font-display text-[15px] font-semibold leading-none tracking-[-0.01em]">Pulso</p>
-                <p className="mt-1 truncate text-[11px] text-muted-foreground">{clinicName}</p>
-              </div>
+            <div className="min-w-0 flex-1">
+              <PulsoLogo className="w-28" priority />
+              <p className="mt-1 truncate text-[11px] text-muted-foreground">{clinicName}</p>
             </div>
           )}
           <button

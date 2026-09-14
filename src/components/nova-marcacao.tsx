@@ -1,7 +1,8 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Search, UserPlus, Loader2, Check } from "lucide-react";
+import { Plus, Search, UserPlus, Check } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -211,7 +212,7 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
             {t("common.cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={saving || !patient || !doctorId}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
+            {saving ? <ProcessingPulse /> : <Check className="size-4" />}
             {t("agenda.booking.confirm")}
           </Button>
         </>

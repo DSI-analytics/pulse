@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, Pencil, Plus, Trash2 } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -169,7 +170,7 @@ export function SpecialtyManager({ specialties }: { specialties: SpecialtyView[]
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="secondary" onClick={() => setEditing(null)}>{t("common.cancel")}</Button>
             <Button type="submit" disabled={pending}>
-              {pending && <Loader2 className="animate-spin" />}
+              {pending && <ProcessingPulse />}
               {t("common.save")}
             </Button>
           </div>

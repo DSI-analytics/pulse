@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { KeyRound, Loader2, Pencil, Plus, Power, PowerOff, Search, UserRoundCog } from "lucide-react";
+import { KeyRound, Pencil, Plus, Power, PowerOff, Search, UserRoundCog } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import type { UserRole } from "@prisma/client";
 import { createUser, resetUserPassword, setUserActive, updateUser } from "@/server/user-actions";
 import { ROLE_LABELS } from "@/lib/rbac";
@@ -166,7 +167,7 @@ export function UserManagement({ users, doctors, currentUserId, currentRole }: {
                 <TableCell>
                   <div className="flex justify-end gap-1">
                     <Button variant="ghost" size="icon" title={t("common.edit")} aria-label={t("users.editUser", { name: user.name })} disabled={protectedUser || busy} onClick={() => openEdit(user)}><Pencil /></Button>
-                    <Button variant="ghost" size="icon" title={t("users.resetPassword")} aria-label={t("users.resetPasswordOf", { name: user.name })} disabled={protectedUser || busy} onClick={() => reset(user)}>{busy ? <Loader2 className="animate-spin" /> : <KeyRound />}</Button>
+                    <Button variant="ghost" size="icon" title={t("users.resetPassword")} aria-label={t("users.resetPasswordOf", { name: user.name })} disabled={protectedUser || busy} onClick={() => reset(user)}>{busy ? <ProcessingPulse /> : <KeyRound />}</Button>
                     <Button variant="ghost" size="icon" title={user.isActive ? t("users.deactivate") : t("users.activate")} aria-label={user.isActive ? t("users.deactivateUser", { name: user.name }) : t("users.activateUser", { name: user.name })} disabled={protectedUser || busy || (user.id === currentUserId && user.isActive)} onClick={() => toggle(user)}>
                       {user.isActive ? <PowerOff className="text-danger" /> : <Power className="text-success" />}
                     </Button>
@@ -185,7 +186,7 @@ export function UserManagement({ users, doctors, currentUserId, currentRole }: {
           onClose={close}
           title={editing === "new" ? t("users.createTitle") : t("users.editUser", { name: editing.name })}
           description={editing === "new" ? t("users.createDescription") : t("users.editDescription")}
-          footer={password ? <Button onClick={() => { setEditing(null); setPassword(null); }}>{t("users.done")}</Button> : <><Button variant="ghost" onClick={close}>{t("common.cancel")}</Button><Button onClick={submit} disabled={saving || isProtectedSuperAdmin}>{saving ? <Loader2 className="animate-spin" /> : <UserRoundCog />} {t("common.save")}</Button></>}
+          footer={password ? <Button onClick={() => { setEditing(null); setPassword(null); }}>{t("users.done")}</Button> : <><Button variant="ghost" onClick={close}>{t("common.cancel")}</Button><Button onClick={submit} disabled={saving || isProtectedSuperAdmin}>{saving ? <ProcessingPulse /> : <UserRoundCog />} {t("common.save")}</Button></>}
         >
           {password ? (
             <div className="space-y-3">

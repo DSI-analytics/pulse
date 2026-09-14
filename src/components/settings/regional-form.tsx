@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Save } from "lucide-react";
+import { Save } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select";
@@ -74,7 +75,7 @@ export function RegionalForm({
           <div className="flex flex-col gap-3 pt-4 sm:flex-row sm:items-center sm:justify-between">
             <FormStatus state={state} className="sm:flex-1" />
             <Button type="submit" disabled={pending} className="sm:ml-auto">
-              {pending ? <Loader2 className="animate-spin" /> : <Save />}
+              {pending ? <ProcessingPulse /> : <Save />}
               {pending ? t("common.saving") : t("common.save")}
             </Button>
           </div>

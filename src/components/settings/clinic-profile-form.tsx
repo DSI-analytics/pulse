@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, Save } from "lucide-react";
+import { Save } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -84,7 +85,7 @@ export function ClinicProfileForm({ clinic, timezones }: { clinic: ClinicValues;
       <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <FormStatus state={state} className="sm:flex-1" />
         <Button type="submit" disabled={pending} className="sm:ml-auto">
-          {pending ? <Loader2 className="animate-spin" /> : <Save />}
+          {pending ? <ProcessingPulse /> : <Save />}
           {pending ? t("common.saving") : t("common.save")}
         </Button>
       </div>

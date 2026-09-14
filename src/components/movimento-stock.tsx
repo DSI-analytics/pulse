@@ -1,7 +1,8 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeftRight, Check, Loader2, Minus } from "lucide-react";
+import { ArrowLeftRight, Check, Minus } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,7 +105,7 @@ function MovimentoDialog({
         <>
           <Button variant="ghost" onClick={onClose}>{t("common.cancel")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("stock.movement.submit")}
+            {saving ? <ProcessingPulse /> : <Check className="size-4" />} {t("stock.movement.submit")}
           </Button>
         </>
       }

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Copy, Globe, KeyRound, Loader2, Network, Plus, ShieldOff, Sparkles } from "lucide-react";
+import { Check, Copy, Globe, KeyRound, Network, Plus, ShieldOff, Sparkles } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -247,7 +248,7 @@ export function IntegrationsManager({ status, clients }: { status: IntegrationSt
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="secondary" onClick={() => setCreating(false)}>{t("common.cancel")}</Button>
             <Button type="submit" disabled={pending}>
-              {pending ? <Loader2 className="animate-spin" /> : <KeyRound />}
+              {pending ? <ProcessingPulse /> : <KeyRound />}
               {t("common.create")}
             </Button>
           </div>

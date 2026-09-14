@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Eye, EyeOff, KeyRound, Loader2, Save } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Save } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { changeOwnPassword, updateOwnProfile, type AccountActionState } from "@/server/account-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,7 +31,7 @@ export function AccountSettings({ name, email }: { name: string; email: string }
           <div><Label htmlFor="account-name">{t("account.profile.name")}</Label><Input id="account-name" name="name" className="mt-1.5" defaultValue={name} autoComplete="name" required /></div>
           <div><Label htmlFor="account-email">{t("account.profile.email")}</Label><Input id="account-email" name="email" type="email" className="mt-1.5" defaultValue={email} autoComplete="email" required /></div>
           <ActionMessage state={profileState} />
-          <Button type="submit" disabled={profilePending}>{profilePending ? <Loader2 className="animate-spin" /> : <Save />} {t("account.profile.save")}</Button>
+          <Button type="submit" disabled={profilePending}>{profilePending ? <ProcessingPulse /> : <Save />} {t("account.profile.save")}</Button>
         </div>
       </form>
 
@@ -44,7 +45,7 @@ export function AccountSettings({ name, email }: { name: string; email: string }
           <PasswordField id="new-password" name="newPassword" label={t("account.security.newPassword")} autoComplete="new-password" minLength={8} />
           <PasswordField id="confirm-password" name="confirmPassword" label={t("account.security.confirmPassword")} autoComplete="new-password" minLength={8} />
           <ActionMessage state={passwordState} />
-          <Button type="submit" disabled={passwordPending}>{passwordPending ? <Loader2 className="animate-spin" /> : <KeyRound />} {t("account.security.submit")}</Button>
+          <Button type="submit" disabled={passwordPending}>{passwordPending ? <ProcessingPulse /> : <KeyRound />} {t("account.security.submit")}</Button>
         </div>
       </form>
     </div>

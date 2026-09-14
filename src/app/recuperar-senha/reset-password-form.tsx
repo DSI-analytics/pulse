@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
 import { useActionState } from "react";
-import { CheckCircle2, Loader2, Mail, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Mail, ShieldCheck } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import {
   confirmPasswordReset,
   requestPasswordReset,
@@ -56,7 +57,7 @@ export function ResetPasswordForm() {
         </div>
         {confirmState?.error && <p className="rounded-md bg-danger-muted px-3 py-2 text-[13px] font-medium text-danger">{confirmState.error}</p>}
         <Button type="submit" className="w-full" disabled={confirming}>
-          {confirming ? <Loader2 className="animate-spin" /> : <ShieldCheck />}
+          {confirming ? <ProcessingPulse /> : <ShieldCheck />}
           {t("auth.reset.confirmSubmit")}
         </Button>
         <div className="flex items-center justify-between text-[13px]">
@@ -75,7 +76,7 @@ export function ResetPasswordForm() {
       </div>
       {requestState?.error && <p className="rounded-md bg-danger-muted px-3 py-2 text-[13px] font-medium text-danger">{requestState.error}</p>}
       <Button type="submit" className="w-full" disabled={requesting}>
-        {requesting ? <Loader2 className="animate-spin" /> : <Mail />}
+        {requesting ? <ProcessingPulse /> : <Mail />}
         {t("auth.reset.sendCode")}
       </Button>
       <Link href="/login" className="block text-center text-[13px] text-muted-foreground hover:text-foreground">{t("auth.reset.backToLogin")}</Link>

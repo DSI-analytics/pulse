@@ -1,7 +1,8 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { LogIn, Play, X, Ban, Loader2 } from "lucide-react";
+import { LogIn, Play, X, Ban } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import type { AppointmentStatus } from "@prisma/client";
 import { setAppointmentStatus } from "@/server/appointment-actions";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,7 @@ export function AgendaActions({ id, status, canConduct = false, canManage = fals
     }
   }
 
-  if (busy) return <Loader2 className="size-4 animate-spin text-muted-foreground" />;
+  if (busy) return <ProcessingPulse className="text-muted-foreground" />;
 
   if (canConduct && (status === "EM_CONSULTA" || status === "CONCLUIDA")) {
     return <ClinicalConsultationEditor appointmentId={id} status={status} />;

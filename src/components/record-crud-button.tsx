@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Check, Pencil, Trash2 } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { useRouter } from "next/navigation";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
@@ -118,7 +119,7 @@ export function RecordCrudButton({
             <>
               <Button variant="ghost" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
               <Button onClick={submit} disabled={saving}>
-                {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("common.save")}
+                {saving ? <ProcessingPulse /> : <Check className="size-4" />} {t("common.save")}
               </Button>
             </>
           }

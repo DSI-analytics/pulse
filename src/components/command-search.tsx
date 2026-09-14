@@ -1,7 +1,9 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Search, Loader2 } from "lucide-react";
+import { Search } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
+import { startNavigationFeedback } from "@/components/navigation-feedback";
 import { globalSearch, type SearchHit } from "@/server/search-actions";
 import { Badge } from "@/components/ui/badge";
 import { useT } from "@/i18n/client";
@@ -66,6 +68,7 @@ export function CommandSearch() {
 
   function go(href: string) {
     setOpen(false);
+    startNavigationFeedback();
     router.push(href);
   }
 
@@ -109,7 +112,7 @@ export function CommandSearch() {
           >
             <div className="flex items-center gap-3 px-5">
               {loading ? (
-                <Loader2 className="size-[18px] shrink-0 animate-spin text-muted-foreground" />
+                <ProcessingPulse className="text-muted-foreground" />
               ) : (
                 <Search className="size-[18px] shrink-0 text-muted-foreground" />
               )}

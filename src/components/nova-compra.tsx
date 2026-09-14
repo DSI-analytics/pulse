@@ -1,7 +1,8 @@
 "use client";
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Check, Loader2, PackagePlus } from "lucide-react";
+import { Plus, Trash2, Check, PackagePlus } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,7 +97,7 @@ function NovaCompraDialog({ onClose }: { onClose: () => void }) {
         <>
           <Button variant="ghost" onClick={onClose}>{t("common.cancel")}</Button>
           <Button onClick={submit} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} {t("suppliers.newPurchase.save")}
+            {saving ? <ProcessingPulse /> : <Check className="size-4" />} {t("suppliers.newPurchase.save")}
           </Button>
         </>
       }

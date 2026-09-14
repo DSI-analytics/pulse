@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Check, ClipboardPlus, FilePenLine, Loader2, Save } from "lucide-react";
+import { Check, ClipboardPlus, FilePenLine, Save } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import type { AppointmentStatus } from "@prisma/client";
 import { useRouter } from "next/navigation";
 import { getConsultationEditor, saveConsultation, type ConsultationValues } from "@/server/consultation-actions";
@@ -84,18 +85,18 @@ export function ClinicalConsultationEditor({
             <>
               <Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>{t("common.cancel")}</Button>
               <Button variant="secondary" onClick={() => submit(false)} disabled={saving}>
-                {saving ? <Loader2 className="animate-spin" /> : <Save />} {t("consultations.editor.save")}
+                {saving ? <ProcessingPulse /> : <Save />} {t("consultations.editor.save")}
               </Button>
               {!completed && (
                 <Button onClick={() => submit(true)} disabled={saving}>
-                  {saving ? <Loader2 className="animate-spin" /> : <Check />} {t("consultations.editor.saveAndComplete")}
+                  {saving ? <ProcessingPulse /> : <Check />} {t("consultations.editor.saveAndComplete")}
                 </Button>
               )}
             </>
           ) : undefined}
         >
           {loading ? (
-            <div className="flex min-h-52 items-center justify-center"><Loader2 className="size-6 animate-spin text-primary" /></div>
+            <div className="flex min-h-52 items-center justify-center"><ProcessingPulse className="h-6 w-12 text-primary" /></div>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               <ClinicalField label={t("consultations.editor.fields.subjective")} name="subjective" value={values.subjective} onChange={(value) => setValues((current) => ({ ...current, subjective: value }))} placeholder={t("consultations.editor.fields.subjectivePlaceholder")} />

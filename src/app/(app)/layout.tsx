@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/auth";
 import { cookies } from "next/headers";
+import { Suspense } from "react";
 import { prisma } from "@/lib/prisma";
 import { NAV_ITEMS } from "@/lib/nav";
 import { can } from "@/lib/rbac";
@@ -8,12 +9,13 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { MobileNav } from "@/components/mobile-nav";
 import { CommandSearch } from "@/components/command-search";
 import { NovaMarcacao } from "@/components/nova-marcacao";
-import { PulseMark } from "@/components/pulse-mark";
+import { PulsoLogo } from "@/components/pulso-logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { UserMenu } from "@/components/user-menu";
 import { NotificationsMenu, type NotificationView } from "@/components/notifications-menu";
 import { getVisibleNotifications } from "@/server/notifications";
-import { Loader2 } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
+import { NavigationFeedback } from "@/components/navigation-feedback";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -39,13 +41,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="relative flex min-h-dvh">
+      <Suspense fallback={null}>
+        <NavigationFeedback />
+      </Suspense>
       <div className="dashboard-reveal pointer-events-none fixed inset-0 z-[150] flex items-center justify-center bg-background p-6" aria-hidden>
         <div className="glass-strong flex min-w-52 flex-col items-center rounded-[28px] px-8 py-7 text-center">
-          <div className="flex size-14 items-center justify-center rounded-[18px] bg-primary shadow-glow">
-            <PulseMark className="size-8 text-primary-foreground" />
-          </div>
-          <p className="mt-4 font-display text-lg font-semibold">Pulso</p>
-          <Loader2 className="mt-3 size-5 animate-spin text-primary" />
+          <PulsoLogo className="w-40" priority />
+          <ProcessingPulse className="mt-3 h-5 w-10 text-primary" />
         </div>
       </div>
       <AppSidebar allowed={allowed} clinicName={clinic?.name ?? t("common.clinicFallback")} initiallyCollapsed={initiallyCollapsed} />
@@ -53,12 +55,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {/* Barra superior flutuante em vidro: o conteúdo desliza por baixo dela. */}
         <header className="sticky top-0 z-30 px-3 pt-3 md:px-4 lg:pl-3 print:hidden">
           <div className="glass flex h-14 items-center gap-2 rounded-[20px] pl-2 pr-1.5 md:pl-2.5">
-            <div
-              className="flex size-9 shrink-0 items-center justify-center rounded-[11px] bg-primary lg:hidden"
-              aria-hidden
-            >
-              <PulseMark className="size-5 text-primary-foreground" />
-            </div>
+            <PulsoLogo className="w-14 shrink-0 lg:hidden" priority />
             <div className="min-w-0 flex-1 md:flex-none">
               <CommandSearch />
             </div>

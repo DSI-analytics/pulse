@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Loader2, MapPin, Pencil, Phone, Plus, Star, Trash2 } from "lucide-react";
+import { MapPin, Pencil, Phone, Plus, Star, Trash2 } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -94,7 +95,7 @@ export function BranchManager({ branches }: { branches: BranchView[] }) {
                 <div className="flex shrink-0 flex-wrap gap-1.5">
                   {!branch.isMain && (
                     <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={() => run(() => setMainBranch(branch.id))}>
-                      <Star /> {t("settings.clinic.setMain")}
+                      {pending ? <ProcessingPulse /> : <Star />} {t("settings.clinic.setMain")}
                     </Button>
                   )}
                   <Button type="button" size="sm" variant="ghost" onClick={() => open(branch)}>
@@ -140,7 +141,7 @@ export function BranchManager({ branches }: { branches: BranchView[] }) {
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" variant="secondary" onClick={() => setEditing(null)}>{t("common.cancel")}</Button>
             <Button type="submit" disabled={pending}>
-              {pending && <Loader2 className="animate-spin" />}
+              {pending && <ProcessingPulse />}
               {t("common.save")}
             </Button>
           </div>

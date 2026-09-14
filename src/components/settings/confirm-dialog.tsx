@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { ProcessingPulse } from "@/components/processing-pulse";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { useT } from "@/i18n/client";
@@ -36,7 +36,7 @@ export function ConfirmDialog({
             {t("common.cancel")}
           </Button>
           <Button type="button" variant="danger" onClick={onConfirm} disabled={pending}>
-            {pending && <Loader2 className="animate-spin" />}
+            {pending && <ProcessingPulse />}
             {confirmLabel}
           </Button>
         </>

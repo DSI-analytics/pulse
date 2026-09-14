@@ -13,6 +13,7 @@ import { loadPatientTimeline } from "@/server/timeline-actions";
 import type { TimelineEvent, TimelineEventType } from "@/server/clinical-record";
 import { useFormat, useT } from "@/i18n/client";
 import { clinicalEnumLabel } from "./enum-label";
+import { ProcessingPulse } from "@/components/processing-pulse";
 
 const ICON: Record<TimelineEventType, React.ComponentType<{ className?: string }>> = {
   EPISODIO: ClipboardList,
@@ -156,6 +157,7 @@ export function ClinicalTimeline({
         <Input type="date" aria-label={t("clinical.timeline.from")} value={from} onChange={(e) => setFrom(e.target.value)} className="w-full md:w-auto" />
         <Input type="date" aria-label={t("clinical.timeline.to")} value={to} onChange={(e) => setTo(e.target.value)} className="w-full md:w-auto" />
         <Button type="button" size="sm" onClick={applyFilters} disabled={pending}>
+          {pending && <ProcessingPulse />}
           {pending ? t("clinical.timeline.filtering") : t("common.filter")}
         </Button>
       </div>
@@ -194,6 +196,7 @@ export function ClinicalTimeline({
       {hasMore && (
         <div className="flex justify-center">
           <Button type="button" variant="secondary" size="sm" onClick={loadMore} disabled={pending}>
+            {pending && <ProcessingPulse />}
             {pending ? t("common.loading") : t("clinical.timeline.loadMore")}
           </Button>
         </div>
