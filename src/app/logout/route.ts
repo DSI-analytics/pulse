@@ -19,5 +19,9 @@ export async function GET(req: NextRequest) {
     });
   }
   await destroySession();
-  return NextResponse.redirect(new URL("/login", req.url));
+  const loginUrl = new URL("/login", req.url);
+  if (req.nextUrl.searchParams.get("motivo") === "inatividade") {
+    loginUrl.searchParams.set("motivo", "inatividade");
+  }
+  return NextResponse.redirect(loginUrl);
 }

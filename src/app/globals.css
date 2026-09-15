@@ -339,10 +339,6 @@
   box-shadow: inset 0 1px 0 0 var(--glass-highlight), inset 0 -1px 0 0 var(--glass-lowlight), var(--elevation-chrome);
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     background-color: var(--glass-tint);
-    background-image:
-      radial-gradient(120% 85% at 8% -18% in oklch, var(--glass-highlight), var(--glass-sheen-clear) 55%),
-      linear-gradient(112deg in oklch, var(--glass-sheen-clear) 30%, var(--glass-prism) 50%, var(--glass-sheen-clear) 68%),
-      linear-gradient(180deg in oklch, var(--glass-sheen), var(--glass-sheen-clear) 48%);
     -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
     backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
   }
@@ -356,10 +352,6 @@
   box-shadow: inset 0 1px 0 0 var(--glass-highlight), inset 0 -1px 0 0 var(--glass-lowlight), var(--elevation-pop);
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     background-color: var(--glass-tint-strong);
-    background-image:
-      radial-gradient(115% 80% at 10% -16% in oklch, var(--glass-highlight), var(--glass-sheen-clear) 58%),
-      linear-gradient(112deg in oklch, var(--glass-sheen-clear) 34%, var(--glass-prism) 52%, var(--glass-sheen-clear) 70%),
-      linear-gradient(180deg in oklch, var(--glass-sheen), var(--glass-sheen-clear) 40%);
     -webkit-backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(var(--glass-saturate));
     backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(var(--glass-saturate));
   }
@@ -387,7 +379,6 @@
     inset 0 1px 0 0 var(--glass-highlight),
     0 12px 26px -18px oklch(17% 0.045 160 / 0.34);
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    background-image: linear-gradient(180deg in oklch, oklch(100% 0 0 / 0.12), transparent 56%);
     -webkit-backdrop-filter: blur(8px) saturate(135%);
     backdrop-filter: blur(8px) saturate(135%);
   }
@@ -430,10 +421,6 @@ html[data-theme="system"] {
 
 body {
   background-color: var(--background);
-  background-image:
-    linear-gradient(128deg in oklch, var(--canvas-wash-a), transparent 34%),
-    linear-gradient(308deg in oklch, var(--canvas-wash-b), transparent 38%);
-  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -466,6 +453,24 @@ h1, h2, h3, h4 {
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
+}
+
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background-color: var(--border-strong);
 }
 
 svg {

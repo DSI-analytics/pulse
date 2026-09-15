@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { ListFilters } from "@/components/list-filters";
 import { getFormatters, getTranslator } from "@/i18n/server";
+import { DataViewTabs } from "@/components/data-view-tabs";
 
 function daysUntil(date: Date | null): number | null {
   if (!date) return null;
@@ -120,6 +121,13 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
         </Card>
       )}
 
+      <DataViewTabs
+        ariaLabel={t("stock.title")}
+        tabs={[
+          { id: "items", label: t("stock.title") },
+          { id: "movements", label: t("stock.movements.title") },
+        ]}
+      >
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -229,6 +237,7 @@ export default async function StockPage({ searchParams }: { searchParams: Promis
           )}
         </CardContent>
       </Card>
+      </DataViewTabs>
     </>
   );
 }

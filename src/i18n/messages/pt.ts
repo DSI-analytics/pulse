@@ -63,7 +63,6 @@ const pt = {
     recordDeleted: "Registo apagado com sucesso",
     confirmDeleteRecord: "Tem a certeza que pretende apagar este registo?",
     vsLastMonth: "vs. mês anterior",
-    aboutIndicator: "Sobre este indicador",
     indicatorGroups: "Grupos de indicadores",
     noStructuredData: "Sem dados estruturados:",
   },
@@ -89,7 +88,6 @@ const pt = {
     collapseSidebar: "Encolher menu lateral",
     expandShort: "Expandir menu",
     collapseShort: "Encolher menu",
-    footer: "Pulso MVP · v0.1 · Maputo",
     mainNavigation: "Navegação principal",
     navigation: "Navegação",
     search: {

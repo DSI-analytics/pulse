@@ -1,0 +1,2 @@
+export const SESSION_IDLE_SECONDS = 15 * 60;
+export const SESSION_IDLE_MS = SESSION_IDLE_SECONDS * 1000;

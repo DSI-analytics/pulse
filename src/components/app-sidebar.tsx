@@ -133,7 +133,7 @@ export function AppSidebar({
 
         <div className="mx-3 h-px shrink-0 bg-border" aria-hidden />
 
-        <nav className={cn("flex-1 overflow-y-auto overflow-x-hidden pb-4 pt-3", collapsed ? "px-2.5" : "px-3")}>
+        <nav className={cn("sidebar-scroll flex-1 overflow-y-auto overflow-x-hidden pb-4 pt-3", collapsed ? "px-2.5" : "px-3")}>
           <div ref={listRef} className={cn("relative", collapsed ? "space-y-3" : "space-y-5")}>
             <span
               ref={indicatorRef}
@@ -186,9 +186,6 @@ export function AppSidebar({
           </div>
         </nav>
 
-        <div className={cn("shrink-0 border-t border-border px-5 pb-4 pt-3", collapsed && "hidden")}>
-          <p className="text-[11px] text-subtle-foreground">{t("nav.footer")}</p>
-        </div>
       </div>
     </aside>
   );

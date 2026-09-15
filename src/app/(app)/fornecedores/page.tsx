@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { ListFilters } from "@/components/list-filters";
 import type { PaymentTermsStatus, PurchaseStatus } from "@prisma/client";
 import { getFormatters, getTranslator } from "@/i18n/server";
+import { DataViewTabs } from "@/components/data-view-tabs";
 
 const PURCHASE_STATUSES = ["ENCOMENDADA", "RECEBIDA", "PARCIAL", "CANCELADA"] as const satisfies readonly PurchaseStatus[];
 const PAYMENT_STATUSES = ["PENDENTE", "PARCIAL", "PAGO"] as const satisfies readonly PaymentTermsStatus[];
@@ -113,6 +114,13 @@ export default async function FornecedoresPage({ searchParams }: { searchParams:
         { name: "compra", label: t("suppliers.filters.purchaseStatus"), value: purchaseStatus, options: PURCHASE_STATUSES.map((value) => ({ value, label: t(`suppliers.filterOptions.purchaseStatus.${value}`) })) },
         { name: "pagamento", label: t("suppliers.filters.payment"), value: paymentStatus, options: PAYMENT_STATUSES.map((value) => ({ value, label: t(`suppliers.filterOptions.paymentStatus.${value}`) })) },
       ]} />
+      <DataViewTabs
+        ariaLabel={t("suppliers.title")}
+        tabs={[
+          { id: "suppliers", label: t("suppliers.title") },
+          { id: "purchases", label: t("suppliers.purchases.title") },
+        ]}
+      >
       <Card>
         <CardContent className="p-0">
           <Table>
@@ -215,6 +223,7 @@ export default async function FornecedoresPage({ searchParams }: { searchParams:
           )}
         </CardContent>
       </Card>
+      </DataViewTabs>
     </>
   );
 }

@@ -9,6 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { PrintButton } from "@/components/print-button";
 import { Progress } from "@/components/ui/progress";
 import { getFormatters, getTranslator } from "@/i18n/server";
+import { DataViewTabs } from "@/components/data-view-tabs";
 
 export async function generateMetadata() {
   const t = await getTranslator();
@@ -28,7 +29,14 @@ export default async function RelatoriosPage() {
         actions={<PrintButton />}
       />
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <DataViewTabs
+        ariaLabel={t("reports.title")}
+        tabs={[
+          { id: "doctors", label: t("reports.doctors.title") },
+          { id: "specialties", label: t("reports.specialties.title") },
+          { id: "plans", label: t("reports.plans.title") },
+        ]}
+      >
         <ReportCard
           title={t("reports.doctors.title")}
           description={t("reports.currentMonth")}
@@ -67,21 +75,20 @@ export default async function RelatoriosPage() {
             </TableBody>
           </Table>
         </ReportCard>
-      </div>
-
-      <ReportCard title={t("reports.plans.title")} description={t("reports.plans.description")} exportType="planos">
-        <Table>
-          <TableHeader><TableRow><TableHead>{t("reports.plans.plan")}</TableHead><TableHead className="text-right">{t("reports.plans.recognisedRevenue")}</TableHead></TableRow></TableHeader>
-          <TableBody>
-            {d.byPlan.map((p) => (
-              <TableRow key={p.label}>
-                <TableCell className="font-medium">{p.label}</TableCell>
-                <TableCell className="text-right tabular">{f.money(p.value)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </ReportCard>
+        <ReportCard title={t("reports.plans.title")} description={t("reports.plans.description")} exportType="planos">
+          <Table>
+            <TableHeader><TableRow><TableHead>{t("reports.plans.plan")}</TableHead><TableHead className="text-right">{t("reports.plans.recognisedRevenue")}</TableHead></TableRow></TableHeader>
+            <TableBody>
+              {d.byPlan.map((p) => (
+                <TableRow key={p.label}>
+                  <TableCell className="font-medium">{p.label}</TableCell>
+                  <TableCell className="text-right tabular">{f.money(p.value)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </ReportCard>
+      </DataViewTabs>
     </>
   );
 }

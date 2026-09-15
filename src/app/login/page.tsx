@@ -12,9 +12,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t("auth.login.title") };
 }
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ motivo?: string }>;
+}) {
   if (await getSession()) redirect("/");
   const t = await getTranslator();
+  const idle = (await searchParams).motivo === "inatividade";
 
   return (
     <main className="grid min-h-dvh lg:grid-cols-[1.05fr_1fr]">
@@ -50,6 +55,11 @@ export default async function LoginPage() {
             <p className="mt-1 text-sm text-muted-foreground">{t("auth.login.subtitle")}</p>
 
             <div className="mt-6">
+              {idle && (
+                <p className="mb-4 rounded-[12px] border border-warning-edge bg-warning-muted px-3 py-2.5 text-[13px] font-medium text-warning antialiased">
+                  {t("auth.login.idleNotice")}
+                </p>
+              )}
               <LoginForm />
             </div>
           </div>

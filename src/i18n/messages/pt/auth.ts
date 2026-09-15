@@ -11,6 +11,7 @@ const auth = {
     password: "Palavra-passe",
     forgotPassword: "Esqueci a palavra-passe",
     submit: "Entrar",
+    idleNotice: "A sua sessão terminou após 15 minutos sem atividade. Inicie sessão novamente.",
     demoTitle: "Contas de demonstração",
     demoPassword: "Palavra-passe:",
   },

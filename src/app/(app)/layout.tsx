@@ -16,6 +16,7 @@ import { NotificationsMenu, type NotificationView } from "@/components/notificat
 import { getVisibleNotifications } from "@/server/notifications";
 import { ProcessingPulse } from "@/components/processing-pulse";
 import { NavigationFeedback } from "@/components/navigation-feedback";
+import { IdleSessionGuard } from "@/components/idle-session-guard";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -41,6 +42,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="relative flex min-h-dvh">
+      <IdleSessionGuard />
       <Suspense fallback={null}>
         <NavigationFeedback />
       </Suspense>

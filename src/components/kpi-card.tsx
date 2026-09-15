@@ -78,7 +78,6 @@ export async function KpiCard({
           role="tooltip"
           className="glass-tooltip pointer-events-none absolute right-2 top-[calc(100%+0.5rem)] z-50 w-max min-w-44 max-w-[calc(100vw-2rem)] origin-top-right translate-y-2 scale-[0.96] rounded-[14px] px-3 py-2.5 text-left text-xs leading-relaxed text-foreground opacity-0 blur-[2px] transition-[opacity,transform,filter] duration-[360ms] ease-[var(--ease-spring)] group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100 group-hover:blur-none group-focus:translate-y-0 group-focus:scale-100 group-focus:opacity-100 group-focus:blur-none sm:max-w-80"
         >
-          <span className="mb-0.5 block font-semibold">{t("common.aboutIndicator")}</span>
           <span className="text-muted-foreground">{indicatorDescription}</span>
         </div>
       )}

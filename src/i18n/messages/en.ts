@@ -59,7 +59,6 @@ const en: Messages = {
     recordDeleted: "Record deleted successfully",
     confirmDeleteRecord: "Are you sure you want to delete this record?",
     vsLastMonth: "vs. previous month",
-    aboutIndicator: "About this indicator",
     indicatorGroups: "Indicator groups",
     noStructuredData: "No structured data:",
   },
@@ -85,7 +84,6 @@ const en: Messages = {
     collapseSidebar: "Collapse sidebar",
     expandShort: "Expand menu",
     collapseShort: "Collapse menu",
-    footer: "Pulso MVP · v0.1 · Maputo",
     mainNavigation: "Main navigation",
     navigation: "Navigation",
     search: {

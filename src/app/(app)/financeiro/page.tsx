@@ -19,6 +19,7 @@ import type { ExpenseStatus, InvoiceStatus, RevenueSource } from "@prisma/client
 import { reconcileBilling } from "@/lib/domain/billing";
 import { InvoicePaymentButton } from "@/components/invoice-payment-button";
 import { getFormatters, getTranslator } from "@/i18n/server";
+import { DataViewTabs } from "@/components/data-view-tabs";
 
 const EXPENSE_STATUSES = ["PENDENTE", "PAGA", "ANULADA"] as const satisfies readonly ExpenseStatus[];
 const REVENUE_SOURCES = ["CONSULTA", "PROCEDIMENTO", "EXAME", "PRODUTO", "SEGURADORA", "PRIVADO", "OUTRO"] as const satisfies readonly RevenueSource[];
@@ -188,6 +189,15 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
         { name: "ate", label: t("finance.filters.to"), value: sp.ate, type: "date" },
       ]} />
 
+      <DataViewTabs
+        ariaLabel={t("finance.title")}
+        tabs={[
+          { id: "invoices", label: t("finance.invoices.title") },
+          { id: "insurers", label: t("finance.insurers.title") },
+          { id: "revenue", label: t("finance.recentRevenue.title") },
+          { id: "expenses", label: t("finance.recentExpenses.title") },
+        ]}
+      >
       <Card>
         <CardHeader><CardTitle>{t("finance.invoices.title")}</CardTitle><CardDescription>{t("finance.invoices.description", { count: invoiceRows.length })}</CardDescription></CardHeader>
         <CardContent className="pt-0">
@@ -291,6 +301,7 @@ export default async function FinanceiroPage({ searchParams }: { searchParams: P
           </Table>
         </CardContent>
       </Card>
+      </DataViewTabs>
     </>
   );
 }

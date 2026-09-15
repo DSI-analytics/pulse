@@ -13,6 +13,7 @@ const auth: Messages["auth"] = {
     password: "Password",
     forgotPassword: "Forgot password",
     submit: "Sign in",
+    idleNotice: "Your session ended after 15 minutes without activity. Sign in again.",
     demoTitle: "Demo accounts",
     demoPassword: "Password:",
   },

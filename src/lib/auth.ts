@@ -7,9 +7,10 @@ import bcrypt from "bcryptjs";
 import type { UserRole } from "@prisma/client";
 import { can, type Permission } from "./rbac";
 import { prisma } from "./prisma";
+import { SESSION_IDLE_SECONDS } from "./session-policy";
 
 const COOKIE = "pulso_session";
-const MAX_AGE = 60 * 60 * 8; // 8h
+const MAX_AGE = SESSION_IDLE_SECONDS;
 
 function secret(): Uint8Array {
   const s = process.env.AUTH_SECRET;
