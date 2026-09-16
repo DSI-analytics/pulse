@@ -8,8 +8,7 @@
       não atravessarem a "zona morta" cinzenta entre cores.
    2. Cores vivas a sério: marca e estados usam o croma perto do máximo que o
       ecrã sRGB consegue mostrar para cada tom (medido), e não tons "pastel".
-      A marca é um verde-esmeralda (hue 150): o verde-azulado anterior (hue 180)
-      não passa de C≈0,10 com texto branco legível — por isso parecia apagado.
+      A marca usa azul vivo, com contraste AA preservado sobre texto branco.
    3. Texto nunca herda opacidade: estados secundários/desactivados usam tons
       sólidos. As animações movem (transform) sem desvanecer blocos com texto.
    4. Qualquer texto sobre qualquer fundo ≥ 4,5:1 (WCAG AA), medido.
@@ -29,38 +28,38 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  /* Canvas e superfícies — brancas e limpas, canvas com tom verde definido */
-  --background: oklch(96.4% 0.024 155);
+  /* Canvas e superfícies — brancas e limpas, canvas com tom azul definido */
+  --background: oklch(96.5% 0.022 250);
   --surface: oklch(100% 0 0);
   --chrome: oklch(100% 0 0);
-  --surface-2: oklch(95.4% 0.03 155);
-  --fill-subtle: oklch(96.6% 0.024 155);
-  --fill: oklch(94.2% 0.036 155);
-  --fill-strong: oklch(90.8% 0.05 155);
+  --surface-2: oklch(95.5% 0.028 250);
+  --fill-subtle: oklch(96.7% 0.022 250);
+  --fill: oklch(94.3% 0.035 250);
+  --fill-strong: oklch(90.8% 0.05 250);
   --card: oklch(100% 0 0);
 
   /* Texto — quase preto com tom, cinzentos com cor (não "lavados") */
-  --foreground: oklch(17% 0.045 160);
-  --card-foreground: oklch(17% 0.045 160);
-  --muted: oklch(95.4% 0.03 155);
-  --muted-foreground: oklch(39% 0.06 160);
-  --subtle-foreground: oklch(45% 0.06 160);
+  --foreground: oklch(18% 0.04 255);
+  --card-foreground: oklch(18% 0.04 255);
+  --muted: oklch(95.5% 0.028 250);
+  --muted-foreground: oklch(39% 0.055 255);
+  --subtle-foreground: oklch(45% 0.055 255);
 
   /* Linhas — sólidas e bem definidas */
-  --border: oklch(84% 0.05 155);
-  --border-strong: oklch(69% 0.08 155);
-  --input: oklch(56% 0.09 155);
-  --ring: oklch(55% 0.16 150);
+  --border: oklch(84% 0.05 250);
+  --border-strong: oklch(69% 0.08 250);
+  --input: oklch(56% 0.09 250);
+  --ring: oklch(55% 0.18 255);
 
-  /* Marca — esmeralda no limite de croma com texto branco AA */
-  --primary: oklch(48% 0.15 150);
-  --primary-hover: oklch(43% 0.14 150);
+  /* Marca — azul vivo com texto branco AA */
+  --primary: oklch(48% 0.19 255);
+  --primary-hover: oklch(43% 0.17 255);
   --primary-foreground: oklch(100% 0 0);
-  --primary-muted: oklch(92.5% 0.08 150);
-  --primary-edge: oklch(64% 0.17 150);
-  --accent: oklch(48% 0.15 150);
+  --primary-muted: oklch(92.5% 0.07 250);
+  --primary-edge: oklch(64% 0.18 255);
+  --accent: oklch(48% 0.19 255);
   --accent-foreground: oklch(100% 0 0);
-  --neon: oklch(84% 0.23 148);
+  --neon: oklch(82% 0.19 245);
 
   /* Estados — cada um no croma máximo legível do seu tom */
   --success: oklch(51% 0.16 145);
@@ -79,21 +78,21 @@
   --info-edge: oklch(64% 0.17 260);
 
   /* Véu dos modais (sem texto por cima dele) */
-  --scrim: oklch(17% 0.045 160 / 0.46);
+  --scrim: oklch(18% 0.04 255 / 0.46);
 
   /* Liquid glass — material translúcido com brilho especular. A opacidade do
      tom (canal alfa) é o mínimo que mantém o texto ≥ 4,5:1 mesmo quando passa
      por baixo a área mais escura possível (um botão primário). */
-  --glass-tint: oklch(99% 0.012 155 / 0.84);
+  --glass-tint: oklch(99% 0.012 250 / 0.84);
   --glass-tint-strong: oklch(100% 0 0 / 0.88);
   --glass-sheen: oklch(100% 0 0 / 0.55);
   --glass-sheen-clear: oklch(100% 0 0 / 0);
-  --glass-edge: oklch(87% 0.045 155);
+  --glass-edge: oklch(87% 0.045 250);
   --glass-highlight: oklch(100% 0 0 / 0.9);
   --glass-lowlight: oklch(100% 0 0 / 0.35);
-  --glass-prism: oklch(79% 0.12 190 / 0.16);
-  --glass-tooltip-tint: oklch(99% 0.012 155 / 0.4);
-  --canvas-wash-a: oklch(88% 0.1 151 / 0.42);
+  --glass-prism: oklch(79% 0.12 250 / 0.16);
+  --glass-tooltip-tint: oklch(99% 0.012 250 / 0.4);
+  --canvas-wash-a: oklch(88% 0.1 250 / 0.42);
   --canvas-wash-b: oklch(90% 0.08 245 / 0.28);
   --glass-blur: 22px;
   --glass-saturate: 190%;
@@ -102,12 +101,12 @@
   --radius: 1rem;
 
   /* Iluminação: sombras curtas e definidas, brilho neon justo */
-  --glow-primary: oklch(60% 0.2 150 / 0.55);
+  --glow-primary: oklch(60% 0.2 255 / 0.55);
   --glow-danger: oklch(58% 0.23 27 / 0.5);
-  --elevation-card: 0 1px 0 oklch(17% 0.045 160 / 0.05), 0 2px 6px -2px oklch(17% 0.045 160 / 0.14);
-  --elevation-card-hover: 0 1px 0 oklch(17% 0.045 160 / 0.06), 0 8px 18px -8px oklch(45% 0.14 150 / 0.34);
-  --elevation-pop: 0 18px 40px -16px oklch(17% 0.045 160 / 0.36), 0 4px 10px -4px oklch(17% 0.045 160 / 0.16);
-  --elevation-chrome: 0 4px 14px -8px oklch(17% 0.045 160 / 0.22);
+  --elevation-card: 0 1px 0 oklch(18% 0.04 255 / 0.05), 0 2px 6px -2px oklch(18% 0.04 255 / 0.14);
+  --elevation-card-hover: 0 1px 0 oklch(18% 0.04 255 / 0.06), 0 8px 18px -8px oklch(45% 0.14 255 / 0.34);
+  --elevation-pop: 0 18px 40px -16px oklch(18% 0.04 255 / 0.36), 0 4px 10px -4px oklch(18% 0.04 255 / 0.16);
+  --elevation-chrome: 0 4px 14px -8px oklch(18% 0.04 255 / 0.22);
   --elevation-glow: 0 4px 14px -5px var(--glow-primary);
   --elevation-glow-danger: 0 4px 14px -5px var(--glow-danger);
 
@@ -119,36 +118,36 @@
   --dur-slow: 420ms;
 }
 
-/* Tema escuro "neon": fundo quase preto com tom verde, acentos a brilhar. */
+/* Tema escuro "neon": fundo quase preto com tom azul, acentos a brilhar. */
 .dark {
-  --background: oklch(13% 0.03 160);
-  --surface: oklch(18% 0.036 160);
-  --chrome: oklch(16.5% 0.034 160);
-  --surface-2: oklch(21.5% 0.042 160);
-  --fill-subtle: oklch(20.5% 0.04 160);
-  --fill: oklch(24% 0.046 160);
-  --fill-strong: oklch(28% 0.052 160);
-  --card: oklch(18% 0.036 160);
+  --background: oklch(13% 0.03 255);
+  --surface: oklch(18% 0.036 255);
+  --chrome: oklch(16.5% 0.034 255);
+  --surface-2: oklch(21.5% 0.042 255);
+  --fill-subtle: oklch(20.5% 0.04 255);
+  --fill: oklch(24% 0.046 255);
+  --fill-strong: oklch(28% 0.052 255);
+  --card: oklch(18% 0.036 255);
 
-  --foreground: oklch(97.5% 0.014 150);
-  --card-foreground: oklch(97.5% 0.014 150);
-  --muted: oklch(21.5% 0.042 160);
-  --muted-foreground: oklch(84% 0.05 155);
-  --subtle-foreground: oklch(75% 0.055 155);
+  --foreground: oklch(97.5% 0.014 250);
+  --card-foreground: oklch(97.5% 0.014 250);
+  --muted: oklch(21.5% 0.042 255);
+  --muted-foreground: oklch(84% 0.05 250);
+  --subtle-foreground: oklch(75% 0.055 250);
 
-  --border: oklch(35% 0.055 160);
-  --border-strong: oklch(47% 0.07 158);
-  --input: oklch(53% 0.08 155);
-  --ring: oklch(82% 0.22 150);
+  --border: oklch(35% 0.055 255);
+  --border-strong: oklch(47% 0.07 255);
+  --input: oklch(53% 0.08 250);
+  --ring: oklch(79% 0.18 250);
 
-  --primary: oklch(80% 0.22 150);
-  --primary-hover: oklch(85% 0.2 150);
-  --primary-foreground: oklch(16% 0.05 155);
-  --primary-muted: oklch(30% 0.09 152);
-  --primary-edge: oklch(60% 0.18 150);
-  --accent: oklch(80% 0.22 150);
-  --accent-foreground: oklch(16% 0.05 155);
-  --neon: oklch(86% 0.23 148);
+  --primary: oklch(76% 0.17 250);
+  --primary-hover: oklch(81% 0.16 250);
+  --primary-foreground: oklch(15% 0.04 255);
+  --primary-muted: oklch(30% 0.1 255);
+  --primary-edge: oklch(61% 0.18 250);
+  --accent: oklch(76% 0.17 250);
+  --accent-foreground: oklch(15% 0.04 255);
+  --neon: oklch(82% 0.2 245);
 
   --success: oklch(80% 0.22 145);
   --success-muted: oklch(29% 0.09 145);
@@ -165,29 +164,29 @@
   --info-muted: oklch(29% 0.08 258);
   --info-edge: oklch(60% 0.16 258);
 
-  --scrim: oklch(5% 0.02 160 / 0.66);
+  --scrim: oklch(5% 0.02 255 / 0.66);
 
-  --glass-tint: oklch(17% 0.035 160 / 0.9);
-  --glass-tint-strong: oklch(19% 0.038 160 / 0.92);
+  --glass-tint: oklch(17% 0.035 255 / 0.9);
+  --glass-tint-strong: oklch(19% 0.038 255 / 0.92);
   --glass-sheen: oklch(100% 0 0 / 0.07);
   --glass-sheen-clear: oklch(100% 0 0 / 0);
-  --glass-edge: oklch(42% 0.065 158);
+  --glass-edge: oklch(42% 0.065 250);
   --glass-highlight: oklch(100% 0 0 / 0.18);
   --glass-lowlight: oklch(100% 0 0 / 0.05);
-  --glass-prism: oklch(78% 0.18 172 / 0.1);
-  --glass-tooltip-tint: oklch(17% 0.035 160 / 0.48);
-  --canvas-wash-a: oklch(38% 0.1 151 / 0.3);
+  --glass-prism: oklch(78% 0.18 250 / 0.1);
+  --glass-tooltip-tint: oklch(17% 0.035 255 / 0.48);
+  --canvas-wash-a: oklch(38% 0.1 250 / 0.3);
   --canvas-wash-b: oklch(34% 0.09 255 / 0.22);
   --glass-blur: 26px;
   --glass-saturate: 170%;
 
-  --glow-primary: oklch(80% 0.22 150 / 0.5);
+  --glow-primary: oklch(76% 0.17 250 / 0.5);
   --glow-danger: oklch(72% 0.19 27 / 0.45);
   --elevation-card: 0 1px 2px oklch(0% 0 0 / 0.5), 0 4px 12px -6px oklch(0% 0 0 / 0.7);
-  --elevation-card-hover: 0 1px 2px oklch(0% 0 0 / 0.5), 0 8px 20px -10px oklch(70% 0.2 150 / 0.4);
+  --elevation-card-hover: 0 1px 2px oklch(0% 0 0 / 0.5), 0 8px 20px -10px oklch(70% 0.18 250 / 0.4);
   --elevation-pop: 0 20px 44px -16px oklch(0% 0 0 / 0.85), 0 4px 12px -4px oklch(0% 0 0 / 0.5);
   --elevation-chrome: 0 6px 16px -8px oklch(0% 0 0 / 0.7);
-  --elevation-glow: 0 0 0 1px oklch(80% 0.22 150 / 0.35), 0 4px 16px -4px var(--glow-primary);
+  --elevation-glow: 0 0 0 1px oklch(76% 0.17 250 / 0.35), 0 4px 16px -4px var(--glow-primary);
   --elevation-glow-danger: 0 0 0 1px oklch(72% 0.19 27 / 0.35), 0 4px 16px -4px var(--glow-danger);
 }
 /* Tema "sistema": segue o sistema operativo. Os tokens são uma cópia exacta do
@@ -195,34 +194,34 @@
    confirma que são iguais). */
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
-    --background: oklch(13% 0.03 160);
-    --surface: oklch(18% 0.036 160);
-    --chrome: oklch(16.5% 0.034 160);
-    --surface-2: oklch(21.5% 0.042 160);
-    --fill-subtle: oklch(20.5% 0.04 160);
-    --fill: oklch(24% 0.046 160);
-    --fill-strong: oklch(28% 0.052 160);
-    --card: oklch(18% 0.036 160);
+    --background: oklch(13% 0.03 255);
+    --surface: oklch(18% 0.036 255);
+    --chrome: oklch(16.5% 0.034 255);
+    --surface-2: oklch(21.5% 0.042 255);
+    --fill-subtle: oklch(20.5% 0.04 255);
+    --fill: oklch(24% 0.046 255);
+    --fill-strong: oklch(28% 0.052 255);
+    --card: oklch(18% 0.036 255);
 
-    --foreground: oklch(97.5% 0.014 150);
-    --card-foreground: oklch(97.5% 0.014 150);
-    --muted: oklch(21.5% 0.042 160);
-    --muted-foreground: oklch(84% 0.05 155);
-    --subtle-foreground: oklch(75% 0.055 155);
+    --foreground: oklch(97.5% 0.014 250);
+    --card-foreground: oklch(97.5% 0.014 250);
+    --muted: oklch(21.5% 0.042 255);
+    --muted-foreground: oklch(84% 0.05 250);
+    --subtle-foreground: oklch(75% 0.055 250);
 
-    --border: oklch(35% 0.055 160);
-    --border-strong: oklch(47% 0.07 158);
-    --input: oklch(53% 0.08 155);
-    --ring: oklch(82% 0.22 150);
+    --border: oklch(35% 0.055 255);
+    --border-strong: oklch(47% 0.07 255);
+    --input: oklch(53% 0.08 250);
+    --ring: oklch(79% 0.18 250);
 
-    --primary: oklch(80% 0.22 150);
-    --primary-hover: oklch(85% 0.2 150);
-    --primary-foreground: oklch(16% 0.05 155);
-    --primary-muted: oklch(30% 0.09 152);
-    --primary-edge: oklch(60% 0.18 150);
-    --accent: oklch(80% 0.22 150);
-    --accent-foreground: oklch(16% 0.05 155);
-    --neon: oklch(86% 0.23 148);
+    --primary: oklch(76% 0.17 250);
+    --primary-hover: oklch(81% 0.16 250);
+    --primary-foreground: oklch(15% 0.04 255);
+    --primary-muted: oklch(30% 0.1 255);
+    --primary-edge: oklch(61% 0.18 250);
+    --accent: oklch(76% 0.17 250);
+    --accent-foreground: oklch(15% 0.04 255);
+    --neon: oklch(82% 0.2 245);
 
     --success: oklch(80% 0.22 145);
     --success-muted: oklch(29% 0.09 145);
@@ -239,29 +238,29 @@
     --info-muted: oklch(29% 0.08 258);
     --info-edge: oklch(60% 0.16 258);
 
-    --scrim: oklch(5% 0.02 160 / 0.66);
+    --scrim: oklch(5% 0.02 255 / 0.66);
 
-    --glass-tint: oklch(17% 0.035 160 / 0.9);
-    --glass-tint-strong: oklch(19% 0.038 160 / 0.92);
+    --glass-tint: oklch(17% 0.035 255 / 0.9);
+    --glass-tint-strong: oklch(19% 0.038 255 / 0.92);
     --glass-sheen: oklch(100% 0 0 / 0.07);
     --glass-sheen-clear: oklch(100% 0 0 / 0);
-    --glass-edge: oklch(42% 0.065 158);
+    --glass-edge: oklch(42% 0.065 250);
     --glass-highlight: oklch(100% 0 0 / 0.18);
     --glass-lowlight: oklch(100% 0 0 / 0.05);
-    --glass-prism: oklch(78% 0.18 172 / 0.1);
-    --glass-tooltip-tint: oklch(17% 0.035 160 / 0.48);
-    --canvas-wash-a: oklch(38% 0.1 151 / 0.3);
+    --glass-prism: oklch(78% 0.18 250 / 0.1);
+    --glass-tooltip-tint: oklch(17% 0.035 255 / 0.48);
+    --canvas-wash-a: oklch(38% 0.1 250 / 0.3);
     --canvas-wash-b: oklch(34% 0.09 255 / 0.22);
     --glass-blur: 26px;
     --glass-saturate: 170%;
 
-    --glow-primary: oklch(80% 0.22 150 / 0.5);
+    --glow-primary: oklch(76% 0.17 250 / 0.5);
     --glow-danger: oklch(72% 0.19 27 / 0.45);
     --elevation-card: 0 1px 2px oklch(0% 0 0 / 0.5), 0 4px 12px -6px oklch(0% 0 0 / 0.7);
-    --elevation-card-hover: 0 1px 2px oklch(0% 0 0 / 0.5), 0 8px 20px -10px oklch(70% 0.2 150 / 0.4);
+    --elevation-card-hover: 0 1px 2px oklch(0% 0 0 / 0.5), 0 8px 20px -10px oklch(70% 0.18 250 / 0.4);
     --elevation-pop: 0 20px 44px -16px oklch(0% 0 0 / 0.85), 0 4px 12px -4px oklch(0% 0 0 / 0.5);
     --elevation-chrome: 0 6px 16px -8px oklch(0% 0 0 / 0.7);
-    --elevation-glow: 0 0 0 1px oklch(80% 0.22 150 / 0.35), 0 4px 16px -4px var(--glow-primary);
+    --elevation-glow: 0 0 0 1px oklch(76% 0.17 250 / 0.35), 0 4px 16px -4px var(--glow-primary);
     --elevation-glow-danger: 0 0 0 1px oklch(72% 0.19 27 / 0.35), 0 4px 16px -4px var(--glow-danger);
   }
 }
@@ -377,7 +376,7 @@
   background-clip: padding-box;
   box-shadow:
     inset 0 1px 0 0 var(--glass-highlight),
-    0 12px 26px -18px oklch(17% 0.045 160 / 0.34);
+    0 12px 26px -18px oklch(18% 0.04 255 / 0.34);
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
     -webkit-backdrop-filter: blur(8px) saturate(135%);
     backdrop-filter: blur(8px) saturate(135%);
