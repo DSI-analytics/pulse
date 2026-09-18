@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 810 540" role="img" aria-labelledby="title">
+  <title id="title">Bandeira da União Europeia</title>
+  <rect width="810" height="540" fill="#003399"/>
+  <defs>
+    <path id="star" d="M0-18 4.23-5.82 17.12-5.56 6.85 2.22 10.58 14.56 0 7-10.58 14.56-6.85 2.22-17.12-5.56-4.23-5.82Z"/>
+  </defs>
+  <g fill="#ffcc00">
+    <use href="#star" transform="translate(405 90)"/>
+    <use href="#star" transform="translate(495 114.1)"/>
+    <use href="#star" transform="translate(560.9 180)"/>
+    <use href="#star" transform="translate(585 270)"/>
+    <use href="#star" transform="translate(560.9 360)"/>
+    <use href="#star" transform="translate(495 425.9)"/>
+    <use href="#star" transform="translate(405 450)"/>
+    <use href="#star" transform="translate(315 425.9)"/>
+    <use href="#star" transform="translate(249.1 360)"/>
+    <use href="#star" transform="translate(225 270)"/>
+    <use href="#star" transform="translate(249.1 180)"/>
+    <use href="#star" transform="translate(315 114.1)"/>
+  </g>
+</svg>

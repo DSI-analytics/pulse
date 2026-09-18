@@ -1,6 +1,6 @@
 import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { intlLocale, SUPPORTED_CURRENCIES } from "@/lib/format";
+import { currencyFlag, currencyName, SUPPORTED_CURRENCIES } from "@/lib/format";
 import { SettingsHeader } from "@/components/settings/settings-header";
 import { RegionalForm } from "@/components/settings/regional-form";
 import { isLocale } from "@/i18n/config";
@@ -19,13 +19,12 @@ export default async function MoedaIdiomaPage() {
     select: { currency: true, locale: true },
   });
 
-  // Nomes das moedas no idioma de quem está a ver ("Metical moçambicano").
-  const names = new Intl.DisplayNames([intlLocale(locale)], { type: "currency" });
   const codes = Array.from(new Set<string>([...SUPPORTED_CURRENCIES, clinic.currency]));
-  const currencies = codes.map((code) => {
-    const name = names.of(code) ?? code;
-    return { code, label: `${name.charAt(0).toLocaleUpperCase(intlLocale(locale))}${name.slice(1)} (${code})` };
-  });
+  const currencies = codes.map((code) => ({
+    code,
+    label: currencyName(code, locale),
+    flag: currencyFlag(code),
+  }));
 
   return (
     <>

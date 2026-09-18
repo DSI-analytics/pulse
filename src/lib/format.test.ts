@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createFormatters, isValidCurrency, isValidTimeZone, parseMoneyInput } from "@/lib/format";
+import {
+  createFormatters,
+  currencyFlag,
+  currencyName,
+  isValidCurrency,
+  isValidTimeZone,
+  parseMoneyInput,
+  SUPPORTED_CURRENCIES,
+} from "@/lib/format";
 import { formatMZN, formatMZNExact } from "@/lib/money";
 import { formatDateShort, formatTime } from "@/lib/datetime";
 
@@ -35,6 +43,30 @@ describe("formatos regionais", () => {
     expect(isValidCurrency("XX")).toBe(false);
     expect(isValidTimeZone("Africa/Maputo")).toBe(true);
     expect(isValidTimeZone("Marte/Olimpo")).toBe(false);
+  });
+
+  it("oferece as moedas lusófonas com as bandeiras correctas", () => {
+    expect(SUPPORTED_CURRENCIES).toEqual([
+      "MZN",
+      "AOA",
+      "STN",
+      "XOF",
+      "CVE",
+      "ZAR",
+      "EUR",
+      "USD",
+    ]);
+    expect(currencyFlag("AOA")).toBe("/flags/ao.svg");
+    expect(currencyFlag("STN")).toBe("/flags/st.svg");
+    expect(currencyFlag("XOF")).toBe("/flags/gw.svg");
+    expect(currencyFlag("CVE")).toBe("/flags/cv.svg");
+    expect(currencyFlag("EUR")).toBe("/flags/Ficheiro_Flag_of_Europe.svg");
+    expect(currencyFlag("GBP")).toBeNull();
+    expect(currencyName("MZN", "pt")).toBe("Metical");
+    expect(currencyName("AOA", "pt")).toBe("Kwanza");
+    expect(currencyName("STN", "pt")).toBe("Dobra");
+    expect(currencyName("CVE", "pt")).toBe("Escudo");
+    expect(currencyName("USD", "en")).toBe("Dollar");
   });
 });
 

@@ -1,7 +1,8 @@
 "use client";
 
 import * as React from "react";
-import { Save } from "lucide-react";
+import Image from "next/image";
+import { Check, Save } from "lucide-react";
 import { ProcessingPulse } from "@/components/processing-pulse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +20,7 @@ export function RegionalForm({
 }: {
   currency: string;
   locale: Locale;
-  currencies: { code: string; label: string }[];
+  currencies: { code: string; label: string; flag: string | null }[];
 }) {
   const t = useT();
   const { timeZone } = useFormat();
@@ -38,19 +39,74 @@ export function RegionalForm({
     <form action={action}>
       <Card>
         <CardContent className="divide-y divide-border p-5">
-          <SettingRow label={t("settings.regional.currencyLabel")} hint={t("settings.regional.currencyHint")} htmlFor="regional-currency">
-            <Select
-              id="regional-currency"
-              name="currency"
-              className="w-full sm:w-72"
-              value={selectedCurrency}
-              onChange={(event) => setSelectedCurrency(event.target.value)}
-            >
-              {currencies.map((option) => (
-                <option key={option.code} value={option.code}>{option.label}</option>
-              ))}
-            </Select>
-          </SettingRow>
+          <fieldset className="pb-5" aria-describedby="regional-currency-hint">
+            <legend className="text-sm font-semibold text-foreground antialiased">
+              {t("settings.regional.currencyLabel")}
+            </legend>
+            <p id="regional-currency-hint" className="mt-0.5 text-[13px] text-muted-foreground antialiased">
+              {t("settings.regional.currencyHint")}
+            </p>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {currencies.map((option) => {
+                const selected = selectedCurrency === option.code;
+                return (
+                  <label
+                    key={option.code}
+                    htmlFor={`regional-currency-${option.code}`}
+                    className={[
+                      "press relative flex min-w-0 cursor-pointer items-center gap-3 rounded-[16px] border p-3 antialiased transition-[background-color,border-color,box-shadow] duration-200",
+                      selected
+                        ? "border-primary-edge bg-primary-muted shadow-glow"
+                        : "border-border bg-surface hover:border-border-strong hover:bg-fill-subtle",
+                      pending ? "cursor-wait" : "",
+                    ].join(" ")}
+                  >
+                    <input
+                      id={`regional-currency-${option.code}`}
+                      type="radio"
+                      name="currency"
+                      value={option.code}
+                      checked={selected}
+                      disabled={pending}
+                      onChange={() => setSelectedCurrency(option.code)}
+                      className="sr-only"
+                    />
+                    <span className="flex h-9 w-12 shrink-0 items-center justify-center overflow-hidden rounded-[8px] border border-border-strong bg-surface">
+                      {option.flag ? (
+                        <Image
+                          src={option.flag}
+                          alt=""
+                          width={48}
+                          height={32}
+                          unoptimized
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="font-mono text-[11px] font-semibold text-muted-foreground">{option.code}</span>
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-semibold text-foreground">{option.label}</span>
+                      <span className="mt-0.5 block font-mono text-[11px] font-semibold tracking-[0.08em] text-muted-foreground">
+                        {option.code}
+                      </span>
+                    </span>
+                    <span
+                      aria-hidden
+                      className={[
+                        "flex size-5 shrink-0 items-center justify-center rounded-full border",
+                        selected
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border-strong bg-surface text-surface",
+                      ].join(" ")}
+                    >
+                      {selected && <Check className="size-3.5" />}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
 
           <SettingRow label={t("settings.regional.localeLabel")} hint={t("settings.regional.localeHint")} htmlFor="regional-locale">
             <Select

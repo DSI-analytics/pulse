@@ -29,7 +29,49 @@ export function intlLocale(locale: Locale): string {
 }
 
 /** Moedas oferecidas nas configurações (qualquer ISO 4217 válido funciona). */
-export const SUPPORTED_CURRENCIES = ["MZN", "ZAR", "USD", "EUR"] as const;
+export const SUPPORTED_CURRENCIES = ["MZN", "AOA", "STN", "XOF", "CVE", "ZAR", "EUR", "USD"] as const;
+
+const CURRENCY_FLAGS: Record<string, string> = {
+  MZN: "/flags/mz.svg",
+  AOA: "/flags/ao.svg",
+  STN: "/flags/st.svg",
+  XOF: "/flags/gw.svg",
+  CVE: "/flags/cv.svg",
+  ZAR: "/flags/za.svg",
+  EUR: "/flags/Ficheiro_Flag_of_Europe.svg",
+  USD: "/flags/us.svg",
+};
+
+const CURRENCY_NAMES: Record<Locale, Record<string, string>> = {
+  pt: {
+    MZN: "Metical",
+    AOA: "Kwanza",
+    STN: "Dobra",
+    XOF: "Franco CFA",
+    CVE: "Escudo",
+    ZAR: "Rand",
+    EUR: "Euro",
+    USD: "Dólar",
+  },
+  en: {
+    MZN: "Metical",
+    AOA: "Kwanza",
+    STN: "Dobra",
+    XOF: "CFA franc",
+    CVE: "Escudo",
+    ZAR: "Rand",
+    EUR: "Euro",
+    USD: "Dollar",
+  },
+};
+
+export function currencyFlag(code: string): string | null {
+  return CURRENCY_FLAGS[code] ?? null;
+}
+
+export function currencyName(code: string, locale: Locale): string {
+  return CURRENCY_NAMES[locale][code] ?? code;
+}
 
 /** Fusos oferecidos nas configurações. */
 export const SUPPORTED_TIMEZONES = [
