@@ -13,6 +13,7 @@ import { KpiCard } from "@/components/kpi-card";
 import { CapacityHeatmap } from "@/components/capacity-heatmap";
 import { TrendChart } from "@/components/charts/trend-chart";
 import { RecordCrudButton } from "@/components/record-crud-button";
+import { DoctorScheduleEditor } from "@/components/doctor-schedule-editor";
 import { getFormatters, getTranslator } from "@/i18n/server";
 
 const WEEKDAYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
@@ -129,8 +130,20 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
         </Card>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex-row items-center justify-between gap-3 space-y-0">
             <CardTitle>{t("doctors.detail.scheduleAndContacts")}</CardTitle>
+            {canManage && (
+              <DoctorScheduleEditor
+                doctorId={id}
+                schedules={doctorData.schedules.map((schedule) => ({
+                  weekday: schedule.weekday,
+                  startTime: schedule.startTime,
+                  endTime: schedule.endTime,
+                  breakStart: schedule.breakStart,
+                  breakEnd: schedule.breakEnd,
+                }))}
+              />
+            )}
           </CardHeader>
           <CardContent className="space-y-2.5 pt-0 text-sm">
             <div className="flex items-center gap-2.5"><Phone className="size-4 text-subtle-foreground" /><span className="text-muted-foreground">{t("doctors.detail.phone")}</span><span className="ml-auto font-medium">{doctorData.phone ?? "—"}</span></div>
@@ -139,6 +152,7 @@ export default async function DoctorDetail({ params }: { params: Promise<{ id: s
             <div className="border-t border-border pt-2.5">
               <p className="mb-1.5 text-xs text-muted-foreground">{t("doctors.detail.workingHours")}</p>
               <ul className="space-y-1">
+                {doctorData.schedules.length === 0 && <li className="text-[13px] text-muted-foreground">{t("doctors.schedule.empty")}</li>}
                 {doctorData.schedules.map((s) => (
                   <li key={s.id} className="flex justify-between text-[13px]">
                     <span>{WEEKDAYS[s.weekday] ? t(`doctors.weekdays.${WEEKDAYS[s.weekday]}`) : ""}</span>

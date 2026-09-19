@@ -10,6 +10,13 @@ const agenda = {
   previousDay: "Dia anterior",
   nextDay: "Dia seguinte",
   goToday: "Ir para hoje",
+  period: {
+    label: "Período da agenda",
+    day: "Um dia",
+    range: "Intervalo",
+    all: "Todas",
+    allDescription: "Todas as marcações",
+  },
   chips: {
     appointments: "Marcações",
     queue: "Em fila / consulta",
@@ -18,6 +25,9 @@ const agenda = {
     noShows: "Faltas",
   },
   filters: {
+    date: "Data",
+    from: "De",
+    to: "Até",
     search: "Pesquisar",
     searchPlaceholder: "Nome do paciente…",
     status: "Estado",
@@ -30,9 +40,13 @@ const agenda = {
     title: "Sem marcações neste dia",
     doctorBody: "Não existem marcações na sua agenda para este dia.",
     body: "Crie uma nova marcação ou navegue para outro dia.",
+    periodTitle: "Sem marcações neste período",
+    periodDoctorBody: "Não existem marcações na sua agenda para o período selecionado.",
+    periodBody: "Altere o período ou crie uma nova marcação.",
   },
   columns: {
     time: "Hora",
+    dateTime: "Data e hora",
     patient: "Paciente",
     doctor: "Médico",
     specialty: "Especialidade",

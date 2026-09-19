@@ -52,7 +52,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <ProcessingPulse className="mt-3 h-5 w-10 text-primary" />
         </div>
       </div>
-      <AppSidebar allowed={allowed} clinicName={clinic?.name ?? t("common.clinicFallback")} initiallyCollapsed={initiallyCollapsed} />
+      <AppSidebar allowed={[...allowed]} clinicName={clinic?.name ?? t("common.clinicFallback")} initiallyCollapsed={initiallyCollapsed} />
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Barra superior flutuante em vidro: o conteúdo desliza por baixo dela. */}
         <header className="sticky top-0 z-30 px-3 pt-3 md:px-4 lg:pl-3 print:hidden">
@@ -73,7 +73,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         {/* pb-32 abaixo de lg: espaço para a barra de navegação flutuante. */}
         <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 pb-32 pt-5 md:px-4 lg:px-3 lg:pb-10">{children}</main>
       </div>
-      <MobileNav allowed={allowed} />
+      <MobileNav allowed={[...allowed]} />
     </div>
   );
 }

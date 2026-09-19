@@ -39,18 +39,41 @@ export function AgendaActions({ id, status, canConduct = false, canManage = fals
     return <ClinicalConsultationEditor appointmentId={id} status={status} />;
   }
 
-  const actions: React.ReactNode[] = [];
-  const push = (key: string, node: React.ReactNode) => actions.push(<React.Fragment key={key}>{node}</React.Fragment>);
-
   if (status === "MARCADA" || status === "CONFIRMADA") {
-    if (canCheckIn || canManage) push("in", <Button size="sm" variant="secondary" onClick={() => run("CHEGOU", t("agenda.actions.checkInDone"))}><LogIn className="size-3.5" /> {t("agenda.actions.checkIn")}</Button>);
-    if (canManage) push("cancel", <Button size="sm" variant="ghost" onClick={() => run("CANCELADA", t("agenda.actions.cancelled"))}><Ban className="size-3.5" /></Button>);
-  } else if (status === "CHEGOU" || status === "EM_ESPERA") {
-    if (canConduct) push("start", <Button size="sm" variant="secondary" onClick={() => run("EM_CONSULTA", t("agenda.actions.started"))}><Play className="size-3.5" /> {t("agenda.actions.start")}</Button>);
-    if (canManage) push("noshow", <Button size="sm" variant="ghost" onClick={() => run("NAO_COMPARECEU", t("agenda.actions.noShowRecorded"))}><X className="size-3.5" /></Button>);
-  } else {
-    return <span className="text-xs text-subtle-foreground">—</span>;
+    if (!canCheckIn && !canManage) return <span className="text-xs text-subtle-foreground">—</span>;
+    return (
+      <div className="flex items-center gap-1.5">
+        {(canCheckIn || canManage) && (
+          <Button size="sm" variant="secondary" onClick={() => run("CHEGOU", t("agenda.actions.checkInDone"))}>
+            <LogIn className="size-3.5" /> {t("agenda.actions.checkIn")}
+          </Button>
+        )}
+        {canManage && (
+          <Button size="sm" variant="ghost" onClick={() => run("CANCELADA", t("agenda.actions.cancelled"))}>
+            <Ban className="size-3.5" />
+          </Button>
+        )}
+      </div>
+    );
   }
 
-  return actions.length ? <div className="flex items-center gap-1.5">{actions}</div> : <span className="text-xs text-subtle-foreground">—</span>;
+  if (status === "CHEGOU" || status === "EM_ESPERA") {
+    if (!canConduct && !canManage) return <span className="text-xs text-subtle-foreground">—</span>;
+    return (
+      <div className="flex items-center gap-1.5">
+        {canConduct && (
+          <Button size="sm" variant="secondary" onClick={() => run("EM_CONSULTA", t("agenda.actions.started"))}>
+            <Play className="size-3.5" /> {t("agenda.actions.start")}
+          </Button>
+        )}
+        {canManage && (
+          <Button size="sm" variant="ghost" onClick={() => run("NAO_COMPARECEU", t("agenda.actions.noShowRecorded"))}>
+            <X className="size-3.5" />
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return <span className="text-xs text-subtle-foreground">—</span>;
 }

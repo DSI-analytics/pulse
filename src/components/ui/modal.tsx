@@ -34,7 +34,12 @@ export function Modal({
   const t = useT();
   const [mounted, setMounted] = React.useState(false);
   const panelRef = React.useRef<HTMLDivElement>(null);
+  const onCloseRef = React.useRef(onClose);
   const titleId = React.useId();
+
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   React.useEffect(() => {
     const id = setTimeout(() => setMounted(true), 0);
@@ -44,7 +49,7 @@ export function Modal({
   React.useEffect(() => {
     if (!open) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCloseRef.current();
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
     // Leva o foco para dentro da folha, sem roubar o autofocus de um campo.
@@ -57,7 +62,7 @@ export function Modal({
       document.body.style.overflow = "";
       previouslyFocused?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!mounted || !open) return null;
 

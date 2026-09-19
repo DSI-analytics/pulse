@@ -1,6 +1,6 @@
 import { format } from "date-fns";
 import { pt } from "date-fns/locale";
-import { formatInTimeZone, toZonedTime } from "date-fns-tz";
+import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
 
 export const CLINIC_TZ = process.env.APP_TZ ?? "Africa/Maputo";
 
@@ -53,13 +53,9 @@ export function clinicNow(): Date {
 
 /** Start/end of a local day, as UTC Date instances suitable for DB range queries. */
 export function dayRange(date: Date = new Date()): { start: Date; end: Date } {
-  const local = toZonedTime(date, CLINIC_TZ);
-  const y = local.getFullYear();
-  const m = local.getMonth();
-  const d = local.getDate();
-  // Build the local midnight, then read back via formatInTimeZone offset.
-  const start = new Date(Date.UTC(y, m, d, 0, 0, 0));
-  const end = new Date(Date.UTC(y, m, d, 23, 59, 59, 999));
+  const iso = formatInTimeZone(date, CLINIC_TZ, "yyyy-MM-dd");
+  const start = fromZonedTime(`${iso}T00:00:00.000`, CLINIC_TZ);
+  const end = fromZonedTime(`${iso}T23:59:59.999`, CLINIC_TZ);
   return { start, end };
 }
 

@@ -19,6 +19,13 @@ import { getFormatters, getTranslator } from "@/i18n/server";
 import type { AppointmentStatus } from "@prisma/client";
 
 const APPOINTMENT_STATUSES: AppointmentStatus[] = ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA", "EM_CONSULTA", "CONCLUIDA", "CANCELADA", "NAO_COMPARECEU"];
+type AgendaMode = "day" | "range" | "all";
+
+function validIsoDate(value: string | undefined, fallback: string): string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return fallback;
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value ? fallback : value;
+}
 
 function addDays(iso: string, n: number): string {
   const d = new Date(iso + "T12:00:00Z");
@@ -34,15 +41,27 @@ export async function generateMetadata() {
 export default async function AgendaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ d?: string; q?: string; estado?: string; medico?: string; especialidade?: string }>;
+  searchParams: Promise<{ periodo?: string; d?: string; de?: string; ate?: string; q?: string; estado?: string; medico?: string; especialidade?: string }>;
 }) {
   const user = await requirePermission("appointment.view");
   const t = await getTranslator();
   const f = await getFormatters();
   const sp = await searchParams;
   const todayIso = clinicTodayIso();
-  const dateIso = sp.d ?? todayIso;
-  const { start, end } = dayRange(new Date(dateIso + "T12:00:00Z"));
+  const mode: AgendaMode = sp.periodo === "intervalo" ? "range" : sp.periodo === "todas" ? "all" : "day";
+  const dateIso = validIsoDate(sp.d, todayIso);
+  const defaultRangeEnd = addDays(todayIso, 6);
+  const requestedFrom = validIsoDate(sp.de, todayIso);
+  const requestedTo = validIsoDate(sp.ate, defaultRangeEnd);
+  const [rangeFrom, rangeTo] = requestedFrom <= requestedTo ? [requestedFrom, requestedTo] : [requestedTo, requestedFrom];
+  const dayBounds = dayRange(new Date(`${dateIso}T12:00:00Z`));
+  const rangeStart = dayRange(new Date(`${rangeFrom}T12:00:00Z`)).start;
+  const rangeEnd = dayRange(new Date(`${rangeTo}T12:00:00Z`)).end;
+  const dateConstraint = mode === "day"
+    ? { gte: dayBounds.start, lte: dayBounds.end }
+    : mode === "range"
+      ? { gte: rangeStart, lte: rangeEnd }
+      : undefined;
   const isDoctor = user.role === "DOCTOR";
   const query = (sp.q ?? "").trim();
   const status = APPOINTMENT_STATUSES.includes(sp.estado as AppointmentStatus) ? sp.estado as AppointmentStatus : undefined;
@@ -51,14 +70,14 @@ export default async function AgendaPage({
     prisma.appointment.findMany({
       where: {
         clinicId: user.clinicId,
-        startAt: { gte: start, lte: end },
+        ...(dateConstraint ? { startAt: dateConstraint } : {}),
         ...(query ? { patient: { name: { contains: query, mode: "insensitive" } } } : {}),
         ...(status ? { status } : {}),
         ...(sp.especialidade ? { specialtyId: sp.especialidade } : {}),
         // A doctor must only ever receive appointments from their own agenda.
         ...(isDoctor ? { doctorId: user.doctorId ?? "__sem_medico_associado__" } : sp.medico ? { doctorId: sp.medico } : {}),
       },
-      orderBy: [{ startAt: "asc" }, { doctor: { name: "asc" } }],
+      orderBy: [{ startAt: mode === "all" ? "desc" : "asc" }, { doctor: { name: "asc" } }],
       select: {
         id: true, startAt: true, status: true, type: true, priceQuoted: true,
         service: { select: { name: true } },
@@ -72,12 +91,34 @@ export default async function AgendaPage({
     prisma.specialty.findMany({ where: { clinicId: user.clinicId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
-  const agendaHref = (date: string) => {
-    const params = new URLSearchParams({ d: date });
+  const filteredParams = () => {
+    const params = new URLSearchParams();
     if (query) params.set("q", query);
     if (status) params.set("estado", status);
     if (!isDoctor && sp.medico) params.set("medico", sp.medico);
     if (sp.especialidade) params.set("especialidade", sp.especialidade);
+    return params;
+  };
+
+  const agendaHref = (date: string) => {
+    const params = filteredParams();
+    params.set("periodo", "dia");
+    params.set("d", date);
+    return `/agenda?${params}`;
+  };
+
+  const modeHref = (nextMode: AgendaMode) => {
+    const params = filteredParams();
+    if (nextMode === "day") {
+      params.set("periodo", "dia");
+      params.set("d", dateIso);
+    } else if (nextMode === "range") {
+      params.set("periodo", "intervalo");
+      params.set("de", rangeFrom);
+      params.set("ate", rangeTo);
+    } else {
+      params.set("periodo", "todas");
+    }
     return `/agenda?${params}`;
   };
 
@@ -97,18 +138,43 @@ export default async function AgendaPage({
   };
 
   const viewedDay = f.dateLong(new Date(dateIso + "T12:00:00Z"));
+  const periodDescription = mode === "day"
+    ? viewedDay
+    : mode === "range"
+      ? `${f.dateMedium(new Date(`${rangeFrom}T12:00:00Z`))} – ${f.dateMedium(new Date(`${rangeTo}T12:00:00Z`))}`
+      : t("agenda.period.allDescription");
+  const clearHref = mode === "day"
+    ? `/agenda?periodo=dia&d=${dateIso}`
+    : mode === "range"
+      ? `/agenda?periodo=intervalo&de=${rangeFrom}&ate=${rangeTo}`
+      : "/agenda?periodo=todas";
 
   return (
     <>
       <PageHeader
         eyebrow={t("nav.groups.operation")}
         title={isDoctor ? t("agenda.myTitle") : t("agenda.title")}
-        description={viewedDay}
+        description={periodDescription}
         actions={can(user.role, "appointment.manage") ? <NovaMarcacao /> : undefined}
       />
 
+      <nav aria-label={t("agenda.period.label")} className="inline-flex max-w-full flex-wrap gap-1 rounded-full border border-border bg-fill p-1">
+        {(["day", "range", "all"] as const).map((item) => (
+          <Link
+            key={item}
+            href={modeHref(item)}
+            aria-current={mode === item ? "page" : undefined}
+            className={mode === item
+              ? "press inline-flex h-8 items-center rounded-full border border-border-strong bg-card px-3.5 text-[13px] font-medium text-foreground shadow-card antialiased"
+              : "press inline-flex h-8 items-center rounded-full border border-transparent px-3.5 text-[13px] font-medium text-muted-foreground antialiased hover:text-foreground"}
+          >
+            {t(`agenda.period.${item}`)}
+          </Link>
+        ))}
+      </nav>
+
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5">
+        {mode === "day" ? <div className="flex items-center gap-1.5">
           <Link
             href={agendaHref(addDays(dateIso, -1))}
             className={buttonVariants({ variant: "secondary", size: "icon" })}
@@ -133,11 +199,11 @@ export default async function AgendaPage({
 
           {/* Only offered when you are not already on today. */}
           {dateIso !== todayIso && (
-            <Link href="/agenda" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+            <Link href={agendaHref(todayIso)} className={buttonVariants({ variant: "ghost", size: "sm" })}>
               {t("agenda.goToday")}
             </Link>
           )}
-        </div>
+        </div> : <div className="text-sm font-semibold text-foreground">{periodDescription}</div>}
         <div className="flex flex-wrap gap-2">
           <Chip label={t("agenda.chips.appointments")} value={counts.total} />
           <Chip label={t("agenda.chips.queue")} value={counts.espera} tone="warning" />
@@ -149,9 +215,16 @@ export default async function AgendaPage({
 
       <ListFilters
         action="/agenda"
-        clearHref={`/agenda?d=${dateIso}`}
-        hidden={{ d: dateIso }}
+        clearHref={clearHref}
+        hidden={{
+          periodo: mode === "day" ? "dia" : mode === "range" ? "intervalo" : "todas",
+        }}
         fields={[
+          ...(mode === "day" ? [{ name: "d", label: t("agenda.filters.date"), value: dateIso, type: "date" as const }] : []),
+          ...(mode === "range" ? [
+            { name: "de", label: t("agenda.filters.from"), value: rangeFrom, type: "date" as const },
+            { name: "ate", label: t("agenda.filters.to"), value: rangeTo, type: "date" as const },
+          ] : []),
           { name: "q", label: t("agenda.filters.search"), value: query, type: "search", placeholder: t("agenda.filters.searchPlaceholder") },
           { name: "estado", label: t("agenda.filters.status"), value: status, options: APPOINTMENT_STATUSES.map((value) => ({ value, label: t(`appointmentStatus.${value}`) })) },
           ...(!isDoctor ? [{ name: "medico", label: t("agenda.filters.doctor"), value: sp.medico, options: doctors.map((doctor) => ({ value: doctor.id, label: doctor.name })) }] : []),
@@ -164,13 +237,13 @@ export default async function AgendaPage({
           <div className="p-6">
             <EmptyState
               icon={CalendarDays}
-              title={isDoctor && !user.doctorId ? t("agenda.empty.noDoctorTitle") : t("agenda.empty.title")}
+              title={isDoctor && !user.doctorId ? t("agenda.empty.noDoctorTitle") : mode === "day" ? t("agenda.empty.title") : t("agenda.empty.periodTitle")}
               description={
                 isDoctor && !user.doctorId
                   ? t("agenda.empty.noDoctorBody")
-                  : isDoctor
-                    ? t("agenda.empty.doctorBody")
-                    : t("agenda.empty.body")
+                  : mode !== "day"
+                    ? isDoctor ? t("agenda.empty.periodDoctorBody") : t("agenda.empty.periodBody")
+                    : isDoctor ? t("agenda.empty.doctorBody") : t("agenda.empty.body")
               }
             />
           </div>
@@ -178,7 +251,7 @@ export default async function AgendaPage({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t("agenda.columns.time")}</TableHead>
+                <TableHead>{t(mode === "day" ? "agenda.columns.time" : "agenda.columns.dateTime")}</TableHead>
                 <TableHead>{t("agenda.columns.patient")}</TableHead>
                 <TableHead>{t("agenda.columns.doctor")}</TableHead>
                 <TableHead>{t("agenda.columns.specialty")}</TableHead>
@@ -192,7 +265,10 @@ export default async function AgendaPage({
             <TableBody>
               {appts.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-mono text-[13px] font-medium">{f.time(a.startAt)}</TableCell>
+                  <TableCell className="font-mono text-[13px] font-medium">
+                    {mode !== "day" && <span className="block font-sans text-xs text-muted-foreground">{f.dateMedium(a.startAt)}</span>}
+                    {f.time(a.startAt)}
+                  </TableCell>
                   <TableCell className="font-medium">{a.patient.name}</TableCell>
                   <TableCell className="text-muted-foreground">{a.doctor.name}</TableCell>
                   <TableCell>

@@ -12,6 +12,13 @@ const agenda: Messages["agenda"] = {
   previousDay: "Previous day",
   nextDay: "Next day",
   goToday: "Go to today",
+  period: {
+    label: "Schedule period",
+    day: "One day",
+    range: "Date range",
+    all: "All",
+    allDescription: "All appointments",
+  },
   chips: {
     appointments: "Appointments",
     queue: "Waiting / in consultation",
@@ -20,6 +27,9 @@ const agenda: Messages["agenda"] = {
     noShows: "No-shows",
   },
   filters: {
+    date: "Date",
+    from: "From",
+    to: "To",
     search: "Search",
     searchPlaceholder: "Patient name…",
     status: "Status",
@@ -32,9 +42,13 @@ const agenda: Messages["agenda"] = {
     title: "No appointments on this day",
     doctorBody: "There are no appointments in your schedule for this day.",
     body: "Create a new appointment or go to another day.",
+    periodTitle: "No appointments in this period",
+    periodDoctorBody: "There are no appointments in your schedule for the selected period.",
+    periodBody: "Change the period or create a new appointment.",
   },
   columns: {
     time: "Time",
+    dateTime: "Date and time",
     patient: "Patient",
     doctor: "Doctor",
     specialty: "Specialty",
