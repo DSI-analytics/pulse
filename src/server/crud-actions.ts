@@ -295,6 +295,19 @@ export async function deleteSupplierRecord(id: string): Promise<Result> {
 }
 
 // ── Health plan ──────────────────────────────────────────────────────────
+function parseHealthPlanCopay(values: Values) {
+  const mode = values.patientCopayMode === "PERCENTAGE" ? "PERCENTAGE" as const : "FIXED" as const;
+  if (mode === "PERCENTAGE") {
+    const percentage = Number((values.patientCopayPercentage || "0").trim().replace(",", "."));
+    if (!Number.isFinite(percentage) || percentage < 0 || percentage > 100) return null;
+    return { patientCopayMode: mode, patientCopay: 0, patientCopayPercentBps: Math.round(percentage * 100) };
+  }
+
+  const patientCopay = parseMoneyInput(values.patientCopay || "0");
+  if (patientCopay === null || patientCopay < 0) return null;
+  return { patientCopayMode: mode, patientCopay, patientCopayPercentBps: 0 };
+}
+
 export async function createHealthPlanRecord(values: Values): Promise<Result> {
   const g = await guard("healthplan.manage");
   if ("error" in g) return g;
@@ -304,15 +317,16 @@ export async function createHealthPlanRecord(values: Values): Promise<Result> {
   const insurer = await prisma.healthInsuranceCompany.findFirst({ where: { id: values.insuranceCompanyId, clinicId: g.clinicId } });
   if (!insurer) return { error: g.t("catalog.errors.insurerInvalid") };
   const contractPrice = parseMoneyInput(values.contractPrice || "0");
-  const patientCopay = parseMoneyInput(values.patientCopay || "0");
-  if (contractPrice === null || patientCopay === null) return { error: g.t("catalog.errors.invalidPrice") };
+  const copay = parseHealthPlanCopay(values);
+  if (contractPrice === null) return { error: g.t("catalog.errors.invalidPrice") };
+  if (!copay) return { error: g.t("plans.errors.invalidCopay") };
   const p = await prisma.healthPlan.create({
     data: {
       clinicId: g.clinicId,
       insuranceCompanyId: insurer.id,
       name,
       contractPrice,
-      patientCopay,
+      ...copay,
     },
     select: { id: true },
   });
@@ -332,15 +346,16 @@ export async function updateHealthPlanRecord(id: string, values: Values): Promis
   const name = nonEmpty(values.name);
   if (name.length < 2) return { error: g.t("catalog.errors.planName") };
   const contractPrice = parseMoneyInput(values.contractPrice || "0");
-  const patientCopay = parseMoneyInput(values.patientCopay || "0");
-  if (contractPrice === null || patientCopay === null) return { error: g.t("catalog.errors.invalidPrice") };
+  const copay = parseHealthPlanCopay(values);
+  if (contractPrice === null) return { error: g.t("catalog.errors.invalidPrice") };
+  if (!copay) return { error: g.t("plans.errors.invalidCopay") };
   const updated = await prisma.healthPlan.update({
     where: { id: existing.id },
     data: {
       insuranceCompanyId: insurer.id,
       name,
       contractPrice,
-      patientCopay,
+      ...copay,
     },
     select: { id: true },
   });

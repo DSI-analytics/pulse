@@ -3,12 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import type { ClinicalAddendumKind } from "@prisma/client";
 import { audit } from "@/lib/audit";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
-import { splitInvoice } from "@/lib/domain/billing";
-import { getTranslator } from "@/i18n/server";
+import { calculateInvoiceTotal, splitInvoice } from "@/lib/domain/billing";
+import { isImmutabilityError } from "@/lib/domain/clinical-immutability";
+import { formatDiagnosisSummary, isValidIcdCode, normaliseIcdCode } from "@/lib/domain/icd";
+import { lookupIcdCode, rememberIcdCode } from "@/server/icd11";
+import { getTranslator, getUiContext } from "@/i18n/server";
 import type { Translator } from "@/i18n/translate";
 
 // Stored as invoice/revenue descriptions (database data), so kept in Portuguese.
@@ -19,30 +23,113 @@ const APPOINTMENT_TYPE_LABEL = {
   PROCEDIMENTO: "Procedimento",
 } as const;
 
+/**
+ * Registo da consulta.
+ *
+ * Duas regras estruturam este ficheiro:
+ *  - uma consulta concluída (`endedAt`) não volta a ser alterada — o que houver
+ *    a acrescentar entra como adenda (`ClinicalAddendum`);
+ *  - o diagnóstico não é texto livre: chega codificado em CID-11 e origina
+ *    linhas `Diagnosis` (append-only). O campo `Consultation.diagnosis` passa a
+ *    ser apenas um resumo desnormalizado, escrito enquanto a consulta está
+ *    aberta.
+ */
 function consultationSchema(t: Translator) {
   const text = z.string().trim().max(10000, t("consultations.errors.textTooLong"));
   return z.object({
     subjective: text,
     notes: text,
-    diagnosis: text,
     prescription: text,
     recommendations: text,
     followUpDate: z.string().trim().regex(/^(|\d{4}-\d{2}-\d{2})$/, t("consultations.errors.invalidFollowUp")),
+    diagnoses: z
+      .array(
+        z.object({
+          code: z.string().trim().min(1, t("clinical.icd.required")),
+          title: z.string().trim().max(500).optional().default(""),
+          uri: z.string().trim().max(400).optional().default(""),
+          release: z.string().trim().max(32).optional().default(""),
+          kind: z.enum(["PRINCIPAL", "SECUNDARIO", "DIFERENCIAL"]).optional().default("PRINCIPAL"),
+          certainty: z.enum(["PROVISORIO", "CONFIRMADO"]).optional().default("PROVISORIO"),
+        }),
+      )
+      .max(20)
+      .optional()
+      .default([]),
   });
 }
 
-export type ConsultationValues = z.input<ReturnType<typeof consultationSchema>>;
+/** Diagnóstico codificado na CID-11, tal como viaja do formulário. */
+export interface ConsultationDiagnosisValue {
+  code: string;
+  title: string;
+  uri?: string;
+  release?: string;
+  kind?: "PRINCIPAL" | "SECUNDARIO" | "DIFERENCIAL";
+  certainty?: "PROVISORIO" | "CONFIRMADO";
+}
+
+export interface ConsultationValues {
+  subjective: string;
+  notes: string;
+  prescription: string;
+  recommendations: string;
+  followUpDate: string;
+  diagnoses: ConsultationDiagnosisValue[];
+}
+
+/** Adenda a mostrar junto do registo da consulta. */
+export interface ConsultationAddendum {
+  id: string;
+  kind: ClinicalAddendumKind;
+  body: string;
+  authorName: string | null;
+  createdAt: string;
+}
+
+export interface ConsultationChargeView {
+  id: string;
+  serviceId: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface ConsultationBillableService {
+  id: string;
+  name: string;
+  category: string;
+  basePrice: number;
+}
+
 export type ConsultationActionResult = { ok: true } | { error: string };
 export type ConsultationEditorResult = {
   ok: true;
   patientName: string;
   doctorName: string;
   status: string;
+  patientId: string;
+  consultationId: string | null;
+  /** Consulta concluída: só leitura, com adendas. */
+  locked: boolean;
   values: ConsultationValues;
+  addenda: ConsultationAddendum[];
+  charges: ConsultationChargeView[];
+  billableServices: ConsultationBillableService[];
 } | { error: string };
 
 function nullable(value: string) {
   return value || null;
+}
+
+/** Idioma dos títulos da CID-11 neste pedido. */
+async function consultationLanguage(): Promise<string> {
+  try {
+    return (await getUiContext()).locale;
+  } catch {
+    return "pt";
+  }
 }
 
 async function clinicalAccess(appointmentId: string, t: Translator) {
@@ -51,14 +138,18 @@ async function clinicalAccess(appointmentId: string, t: Translator) {
   const appointment = await prisma.appointment.findFirst({
     where: { id: appointmentId, clinicId: user.clinicId },
     select: {
-      id: true, clinicId: true, patientId: true, doctorId: true, specialtyId: true,
+      id: true, clinicId: true, patientId: true, doctorId: true, specialtyId: true, encounterId: true,
       healthPlanId: true, priceQuoted: true, startAt: true, endAt: true, status: true, type: true,
       patient: { select: { name: true } },
       doctor: { select: { name: true } },
       service: { select: { id: true, name: true, source: true } },
-      healthPlan: { select: { patientCopay: true, insuranceCompany: { select: { paymentTermDays: true } } } },
+      healthPlan: { select: { patientCopay: true, patientCopayMode: true, patientCopayPercentBps: true, insuranceCompany: { select: { paymentTermDays: true } } } },
       invoice: { select: { id: true } },
       revenue: { select: { id: true } },
+      charges: {
+        orderBy: { createdAt: "asc" },
+        select: { id: true, serviceId: true, description: true, quantity: true, unitPrice: true, total: true },
+      },
     },
   });
   if (!appointment) return { ok: false, error: t("consultations.errors.notFound") } as const;
@@ -80,22 +171,157 @@ export async function getConsultationEditor(appointmentId: string): Promise<Cons
   if (!access.ok) return { error: access.error };
   const consultation = await prisma.consultation.findUnique({
     where: { appointmentId: access.appointment.id },
-    select: { subjective: true, notes: true, diagnosis: true, prescription: true, recommendations: true, followUpDate: true },
+    select: {
+      id: true,
+      endedAt: true,
+      subjective: true,
+      notes: true,
+      prescription: true,
+      recommendations: true,
+      followUpDate: true,
+      diagnoses: {
+        orderBy: { recordedAt: "asc" },
+        select: { code: true, description: true, codeUri: true, codeRelease: true, kind: true, certainty: true },
+      },
+    },
   });
+
+  const [addenda, billableServices] = await Promise.all([
+    consultation ? prisma.clinicalAddendum.findMany({
+        where: { clinicId: access.user.clinicId, targetType: "CONSULTATION", targetId: consultation.id },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, kind: true, body: true, createdAt: true, author: { select: { name: true } } },
+      }) : Promise.resolve([]),
+    prisma.service.findMany({
+      where: { clinicId: access.user.clinicId, isActive: true, source: { in: ["EXAME", "PROCEDIMENTO", "OUTRO"] } },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, category: true, basePrice: true },
+    }),
+  ]);
+
   return {
     ok: true,
     patientName: access.appointment.patient.name,
     doctorName: access.appointment.doctor.name,
     status: access.appointment.status,
+    patientId: access.appointment.patientId,
+    consultationId: consultation?.id ?? null,
+    locked: Boolean(consultation?.endedAt),
     values: {
       subjective: consultation?.subjective ?? "",
       notes: consultation?.notes ?? "",
-      diagnosis: consultation?.diagnosis ?? "",
       prescription: consultation?.prescription ?? "",
       recommendations: consultation?.recommendations ?? "",
       followUpDate: consultation?.followUpDate?.toISOString().slice(0, 10) ?? "",
+      diagnoses: (consultation?.diagnoses ?? [])
+        .filter((row) => Boolean(row.code))
+        .map((row) => ({
+          code: row.code!,
+          title: row.description,
+          uri: row.codeUri ?? undefined,
+          release: row.codeRelease ?? undefined,
+          kind: row.kind,
+          certainty: row.certainty === "CONFIRMADO" ? ("CONFIRMADO" as const) : ("PROVISORIO" as const),
+        })),
     },
+    addenda: addenda.map((row) => ({
+      id: row.id,
+      kind: row.kind,
+      body: row.body,
+      authorName: row.author?.name ?? null,
+      createdAt: row.createdAt.toISOString(),
+    })),
+    charges: access.appointment.charges,
+    billableServices,
   };
+}
+
+const chargeSchema = z.object({
+  serviceId: z.string().min(1),
+  quantity: z.number().int().min(1).max(99),
+});
+
+export async function addConsultationCharge(
+  appointmentId: string,
+  input: { serviceId: string; quantity: number },
+): Promise<{ charge: ConsultationChargeView } | { error: string }> {
+  const t = await getTranslator();
+  const access = await clinicalAccess(appointmentId, t);
+  if (!access.ok) return { error: access.error };
+  if (access.appointment.status !== "EM_CONSULTA" || access.appointment.invoice) {
+    return { error: t("consultations.charges.errors.locked") };
+  }
+  const parsed = chargeSchema.safeParse(input);
+  if (!parsed.success) return { error: t("consultations.charges.errors.invalid") };
+  const service = await prisma.service.findFirst({
+    where: {
+      id: parsed.data.serviceId,
+      clinicId: access.user.clinicId,
+      isActive: true,
+      source: { in: ["EXAME", "PROCEDIMENTO", "OUTRO"] },
+    },
+    select: { id: true, name: true, basePrice: true },
+  });
+  if (!service) return { error: t("consultations.charges.errors.serviceNotFound") };
+
+  try {
+    const charge = await prisma.appointmentCharge.create({
+      data: {
+        clinicId: access.user.clinicId,
+        appointmentId: access.appointment.id,
+        serviceId: service.id,
+        description: service.name,
+        quantity: parsed.data.quantity,
+        unitPrice: service.basePrice,
+        total: service.basePrice * parsed.data.quantity,
+        createdById: access.user.userId,
+      },
+      select: { id: true, serviceId: true, description: true, quantity: true, unitPrice: true, total: true },
+    });
+    await audit({
+      clinicId: access.user.clinicId,
+      userId: access.user.userId,
+      action: "appointment.charge.add",
+      entity: "AppointmentCharge",
+      entityId: charge.id,
+      metadata: { appointmentId: access.appointment.id, serviceId: service.id, quantity: charge.quantity, unitPrice: charge.unitPrice, total: charge.total },
+    });
+    revalidatePath("/agenda");
+    return { charge };
+  } catch (error) {
+    if (typeof error === "object" && error && "code" in error && error.code === "P2002") {
+      return { error: t("consultations.charges.errors.duplicate") };
+    }
+    throw error;
+  }
+}
+
+export async function removeConsultationCharge(
+  appointmentId: string,
+  chargeId: string,
+): Promise<{ ok: true } | { error: string }> {
+  const t = await getTranslator();
+  const access = await clinicalAccess(appointmentId, t);
+  if (!access.ok) return { error: access.error };
+  if (access.appointment.status !== "EM_CONSULTA" || access.appointment.invoice) {
+    return { error: t("consultations.charges.errors.locked") };
+  }
+  const charge = await prisma.appointmentCharge.findFirst({
+    where: { id: chargeId, appointmentId: access.appointment.id, clinicId: access.user.clinicId },
+    select: { id: true, serviceId: true, quantity: true, unitPrice: true, total: true },
+  });
+  if (!charge) return { error: t("consultations.charges.errors.notFound") };
+  await prisma.appointmentCharge.delete({ where: { id: charge.id } });
+  await audit({
+    clinicId: access.user.clinicId,
+    userId: access.user.userId,
+    action: "appointment.charge.remove",
+    entity: "AppointmentCharge",
+    entityId: charge.id,
+    metadata: { appointmentId: access.appointment.id, serviceId: charge.serviceId, quantity: charge.quantity, unitPrice: charge.unitPrice, total: charge.total },
+  });
+  revalidatePath("/agenda");
+  return { ok: true };
 }
 
 export async function saveConsultation(
@@ -113,94 +339,186 @@ export async function saveConsultation(
     return { error: t("consultations.errors.startBeforeComplete") };
   }
 
+  // Consulta concluída é imutável: corrige-se com uma adenda, nunca reescrevendo.
+  const existing = await prisma.consultation.findUnique({
+    where: { appointmentId: access.appointment.id },
+    select: { id: true, endedAt: true, diagnoses: { select: { code: true, description: true } } },
+  });
+  if (existing?.endedAt) return { error: t("clinical.immutable.consultationClosed") };
+
+  // Os diagnósticos são validados contra a CID-11 da OMS — nunca aceites como
+  // texto livre vindo do formulário.
+  const language = await consultationLanguage();
+  const recorded = new Set((existing?.diagnoses ?? []).map((row) => normaliseIcdCode(row.code ?? "")).filter(Boolean));
+  const fresh: { code: string; title: string; uri: string | null; release: string; kind: "PRINCIPAL" | "SECUNDARIO" | "DIFERENCIAL"; certainty: "PROVISORIO" | "CONFIRMADO" }[] = [];
+
+  for (const entry of parsed.data.diagnoses) {
+    const code = normaliseIcdCode(entry.code);
+    if (!isValidIcdCode(code)) return { error: t("clinical.icd.required") };
+    if (recorded.has(code)) continue;
+    const hit = await lookupIcdCode(code, language);
+    if (!hit) return { error: t("clinical.errors.diagnosisCodeUnknown") };
+    await rememberIcdCode(hit, language);
+    recorded.add(hit.code);
+    fresh.push({
+      code: hit.code,
+      title: hit.title,
+      uri: hit.uri ?? (entry.uri || null),
+      release: hit.release || entry.release || "",
+      kind: entry.kind,
+      certainty: entry.certainty,
+    });
+  }
+
+  const summary = formatDiagnosisSummary([
+    ...(existing?.diagnoses ?? []).map((row) => ({ code: row.code ?? "", title: row.description })),
+    ...fresh.map((row) => ({ code: row.code, title: row.title })),
+  ]);
+
   const followUpDate = parsed.data.followUpDate ? new Date(`${parsed.data.followUpDate}T00:00:00.000Z`) : null;
   const now = new Date();
 
-  const saved = await prisma.$transaction(async (tx) => {
-    const consultation = await tx.consultation.upsert({
-      where: { appointmentId: access.appointment.id },
-      create: {
-        clinicId: access.user.clinicId,
-        appointmentId: access.appointment.id,
-        patientId: access.appointment.patientId,
-        doctorId: access.appointment.doctorId,
-        startedAt: now,
-        endedAt: complete ? now : null,
-        subjective: nullable(parsed.data.subjective),
-        notes: nullable(parsed.data.notes),
-        diagnosis: nullable(parsed.data.diagnosis),
-        prescription: nullable(parsed.data.prescription),
-        recommendations: nullable(parsed.data.recommendations),
-        followUpDate,
-      },
-      update: {
-        endedAt: complete ? now : undefined,
-        subjective: nullable(parsed.data.subjective),
-        notes: nullable(parsed.data.notes),
-        diagnosis: nullable(parsed.data.diagnosis),
-        prescription: nullable(parsed.data.prescription),
-        recommendations: nullable(parsed.data.recommendations),
-        followUpDate,
-      },
-      select: { id: true },
-    });
+  let saved: { id: string };
+  try {
+    saved = await prisma.$transaction(async (tx) => {
+      const consultation = await tx.consultation.upsert({
+        where: { appointmentId: access.appointment.id },
+        create: {
+          clinicId: access.user.clinicId,
+          appointmentId: access.appointment.id,
+          patientId: access.appointment.patientId,
+          doctorId: access.appointment.doctorId,
+          startedAt: now,
+          endedAt: complete ? now : null,
+          subjective: nullable(parsed.data.subjective),
+          notes: nullable(parsed.data.notes),
+          diagnosis: nullable(summary),
+          prescription: nullable(parsed.data.prescription),
+          recommendations: nullable(parsed.data.recommendations),
+          followUpDate,
+        },
+        update: {
+          endedAt: complete ? now : undefined,
+          subjective: nullable(parsed.data.subjective),
+          notes: nullable(parsed.data.notes),
+          diagnosis: nullable(summary),
+          prescription: nullable(parsed.data.prescription),
+          recommendations: nullable(parsed.data.recommendations),
+          followUpDate,
+        },
+        select: { id: true, encounterId: true },
+      });
 
-    if (complete) {
-      await tx.appointment.update({ where: { id: access.appointment.id }, data: { status: "CONCLUIDA" } });
-      if (!access.appointment.invoice) {
-        const { patientDue, insurerDue } = splitInvoice(
-          access.appointment.priceQuoted,
-          Boolean(access.appointment.healthPlanId),
-          access.appointment.healthPlan?.patientCopay ?? 0,
-        );
-        const paymentTermDays = access.appointment.healthPlan?.insuranceCompany.paymentTermDays ?? 0;
-        const dueAt = new Date(now.getTime() + paymentTermDays * 86400000);
-        await tx.invoice.create({
-          data: {
+      // Diagnósticos: linhas novas, nunca reescritas.
+      if (fresh.length) {
+        await tx.diagnosis.createMany({
+          data: fresh.map((row) => ({
             clinicId: access.user.clinicId,
-            number: `FAC-${now.getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`,
             patientId: access.appointment.patientId,
-            appointmentId: access.appointment.id,
-            healthPlanId: access.appointment.healthPlanId,
-            status: "EMITIDA",
-            subtotal: access.appointment.priceQuoted,
-            patientDue,
-            insurerDue,
-            total: access.appointment.priceQuoted,
-            amountPaid: 0,
-            issuedAt: now,
-            dueAt,
-            items: {
-              create: {
-                serviceId: access.appointment.service?.id ?? null,
-                description: access.appointment.service?.name ?? APPOINTMENT_TYPE_LABEL[access.appointment.type],
-                quantity: 1,
-                unitPrice: access.appointment.priceQuoted,
-                total: access.appointment.priceQuoted,
+            consultationId: consultation.id,
+            encounterId: consultation.encounterId,
+            kind: row.kind,
+            certainty: row.certainty,
+            code: row.code,
+            codeSystem: "ICD-11",
+            codeUri: row.uri,
+            codeRelease: row.release || null,
+            description: row.title,
+            doctorId: access.appointment.doctorId,
+            recordedById: access.user.userId,
+          })),
+        });
+      }
+
+      if (complete) {
+        await tx.appointment.update({ where: { id: access.appointment.id }, data: { status: "CONCLUIDA" } });
+        const invoiceTotal = calculateInvoiceTotal(access.appointment.priceQuoted, access.appointment.charges);
+        if (!access.appointment.invoice) {
+          const { patientDue, insurerDue } = splitInvoice(
+            invoiceTotal,
+            Boolean(access.appointment.healthPlanId),
+            access.appointment.healthPlan?.patientCopay ?? 0,
+            access.appointment.healthPlan?.patientCopayMode ?? "FIXED",
+            access.appointment.healthPlan?.patientCopayPercentBps ?? 0,
+          );
+          const paymentTermDays = access.appointment.healthPlan?.insuranceCompany.paymentTermDays ?? 0;
+          const dueAt = new Date(now.getTime() + paymentTermDays * 86400000);
+          await tx.invoice.create({
+            data: {
+              clinicId: access.user.clinicId,
+              number: `FAC-${now.getUTCFullYear()}-${randomUUID().slice(0, 8).toUpperCase()}`,
+              patientId: access.appointment.patientId,
+              appointmentId: access.appointment.id,
+              healthPlanId: access.appointment.healthPlanId,
+              status: "EMITIDA",
+              subtotal: invoiceTotal,
+              patientDue,
+              insurerDue,
+              total: invoiceTotal,
+              amountPaid: 0,
+              issuedAt: now,
+              dueAt,
+              items: {
+                create: [
+                  {
+                    serviceId: access.appointment.service?.id ?? null,
+                    description: access.appointment.service?.name ?? APPOINTMENT_TYPE_LABEL[access.appointment.type],
+                    quantity: 1,
+                    unitPrice: access.appointment.priceQuoted,
+                    total: access.appointment.priceQuoted,
+                  },
+                  ...access.appointment.charges.map((charge) => ({
+                    serviceId: charge.serviceId,
+                    description: charge.description,
+                    quantity: charge.quantity,
+                    unitPrice: charge.unitPrice,
+                    total: charge.total,
+                  })),
+                ],
               },
             },
-          },
-        });
+          });
+          if (access.appointment.charges.length) {
+            await tx.clinicalProcedure.createMany({
+              data: access.appointment.charges.map((charge) => ({
+                clinicId: access.user.clinicId,
+                patientId: access.appointment.patientId,
+                encounterId: consultation.encounterId ?? access.appointment.encounterId,
+                serviceId: charge.serviceId,
+                name: charge.description,
+                status: "REALIZADO" as const,
+                performedAt: now,
+                doctorId: access.appointment.doctorId,
+                recordedById: access.user.userId,
+              })),
+            });
+          }
+        }
+        if (!access.appointment.revenue) {
+          await tx.revenue.create({
+            data: {
+              clinicId: access.user.clinicId,
+              source: access.appointment.service?.source ?? (access.appointment.healthPlanId ? "SEGURADORA" : "CONSULTA"),
+              description: access.appointment.service?.name ?? APPOINTMENT_TYPE_LABEL[access.appointment.type],
+              amount: invoiceTotal,
+              patientId: access.appointment.patientId,
+              doctorId: access.appointment.doctorId,
+              specialtyId: access.appointment.specialtyId,
+              healthPlanId: access.appointment.healthPlanId,
+              appointmentId: access.appointment.id,
+              status: "PENDENTE",
+            },
+          });
+        }
       }
-      if (!access.appointment.revenue) {
-        await tx.revenue.create({
-          data: {
-            clinicId: access.user.clinicId,
-            source: access.appointment.service?.source ?? (access.appointment.healthPlanId ? "SEGURADORA" : "CONSULTA"),
-            description: access.appointment.service?.name ?? APPOINTMENT_TYPE_LABEL[access.appointment.type],
-            amount: access.appointment.priceQuoted,
-            patientId: access.appointment.patientId,
-            doctorId: access.appointment.doctorId,
-            specialtyId: access.appointment.specialtyId,
-            healthPlanId: access.appointment.healthPlanId,
-            appointmentId: access.appointment.id,
-            status: "PENDENTE",
-          },
-        });
-      }
-    }
-    return consultation;
-  });
+      return consultation;
+    });
+  } catch (error) {
+    // Rede de segurança: o gatilho de imutabilidade nunca chega ao utilizador
+    // como erro cru da base de dados.
+    if (isImmutabilityError(error)) return { error: t("clinical.immutable.blocked") };
+    throw error;
+  }
 
   await audit({
     clinicId: access.user.clinicId,
@@ -208,7 +526,7 @@ export async function saveConsultation(
     action: complete ? "consultation.complete" : "consultation.update",
     entity: "Consultation",
     entityId: saved.id,
-    metadata: { appointmentId: access.appointment.id },
+    metadata: { appointmentId: access.appointment.id, diagnoses: fresh.length },
   });
   revalidatePath("/agenda");
   revalidatePath("/consultas");

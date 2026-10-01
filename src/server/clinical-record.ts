@@ -1,4 +1,5 @@
 import "server-only";
+import type { ClinicalAddendumKind, ClinicalRecordType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { bmiBand, computeBmi, flagVitals } from "@/lib/domain/vitals";
 import { getTranslator } from "@/i18n/server";
@@ -46,6 +47,15 @@ export const TIMELINE_TYPE_LABEL: Record<TimelineEventType, string> = {
   DOCUMENTO: "Documento",
 };
 
+/** Adenda a um registo clínico (o registo original nunca é alterado). */
+export interface ClinicalAddendumView {
+  id: string;
+  kind: ClinicalAddendumKind;
+  body: string;
+  authorName: string | null;
+  createdAt: string;
+}
+
 export interface TimelineEvent {
   id: string;
   type: TimelineEventType;
@@ -57,6 +67,87 @@ export interface TimelineEvent {
   encounterId?: string | null;
   severity?: "INFO" | "AVISO" | "CRITICO";
   badge?: string | null;
+  /** Registo de origem — o que uma adenda tem de identificar. */
+  recordType: ClinicalRecordType;
+  recordId: string;
+  addenda: ClinicalAddendumView[];
+  /** Tem uma adenda de anulação (`ANULACAO`). */
+  refuted: boolean;
+}
+
+/** Evento antes de lhe serem anexadas as adendas. */
+type RawTimelineEvent = Omit<TimelineEvent, "recordType" | "recordId" | "addenda" | "refuted">;
+
+/** Prefixo do `id` do evento → tabela clínica de origem. */
+const RECORD_TYPE_BY_PREFIX: Record<string, ClinicalRecordType> = {
+  encounter: "ENCOUNTER",
+  consultation: "CONSULTATION",
+  diagnosis: "DIAGNOSIS",
+  vital: "VITAL_SIGN",
+  allergy: "ALLERGY",
+  prescription: "PRESCRIPTION",
+  order: "DIAGNOSTIC_ORDER",
+  result: "DIAGNOSTIC_RESULT",
+  procedure: "PROCEDURE",
+  treatment: "TREATMENT",
+  admission: "ADMISSION",
+  discharge: "ADMISSION",
+  attachment: "ATTACHMENT",
+};
+
+/**
+ * Carrega as adendas de um conjunto de registos, agrupadas por
+ * `tipo:id`. Uma só consulta — a linha temporal não faz N+1.
+ */
+async function loadAddenda(
+  clinicId: string,
+  targets: { type: ClinicalRecordType; id: string }[],
+): Promise<Map<string, ClinicalAddendumView[]>> {
+  const grouped = new Map<string, ClinicalAddendumView[]>();
+  const ids = Array.from(new Set(targets.map((target) => target.id)));
+  if (!ids.length) return grouped;
+
+  const rows = await prisma.clinicalAddendum.findMany({
+    where: { clinicId, targetId: { in: ids } },
+    orderBy: { createdAt: "asc" },
+    select: { id: true, kind: true, body: true, createdAt: true, targetType: true, targetId: true, author: { select: { name: true } } },
+  });
+  for (const row of rows) {
+    const key = `${row.targetType}:${row.targetId}`;
+    const list = grouped.get(key) ?? [];
+    list.push({
+      id: row.id,
+      kind: row.kind,
+      body: row.body,
+      authorName: row.author?.name ?? null,
+      createdAt: row.createdAt.toISOString(),
+    });
+    grouped.set(key, list);
+  }
+  return grouped;
+}
+
+/** Anexa as adendas aos eventos da página devolvida. */
+async function withAddenda(clinicId: string, events: RawTimelineEvent[]): Promise<TimelineEvent[]> {
+  const identified = events.map((event) => {
+    const [prefix, ...rest] = event.id.split(":");
+    return { event, recordType: RECORD_TYPE_BY_PREFIX[prefix!] ?? "ENCOUNTER", recordId: rest.join(":") };
+  });
+  const grouped = await loadAddenda(
+    clinicId,
+    identified.map((item) => ({ type: item.recordType as ClinicalRecordType, id: item.recordId })),
+  );
+
+  return identified.map(({ event, recordType, recordId }) => {
+    const addenda = grouped.get(`${recordType}:${recordId}`) ?? [];
+    return {
+      ...event,
+      recordType: recordType as ClinicalRecordType,
+      recordId,
+      addenda,
+      refuted: addenda.some((addendum) => addendum.kind === "ANULACAO"),
+    };
+  });
 }
 
 export interface TimelineFilters {
@@ -242,7 +333,7 @@ export async function getPatientTimeline(
 
   const t = await getTranslator();
   const label = (value: string) => clinicalEnumLabel(t, value);
-  const events: TimelineEvent[] = [];
+  const events: RawTimelineEvent[] = [];
 
   for (const e of encounters) {
     events.push({
@@ -435,7 +526,9 @@ export async function getPatientTimeline(
   const page = events.slice(0, limit);
   const hasMore = events.length > limit;
   return {
-    events: page,
+    // Cada registo leva consigo as suas adendas: a linha temporal mostra a
+    // correcção ao lado do original, que nunca é reescrito.
+    events: await withAddenda(clinicId, page),
     hasMore,
     nextCursor: hasMore && page.length ? page[page.length - 1]!.at : null,
   };
@@ -461,9 +554,12 @@ export async function getPatientClinicalSummary(clinicId: string, patientId: str
       select: { id: true, substance: true, severity: true, kind: true, category: true, reaction: true, identifiedAt: true, notes: true },
     }),
     prisma.diagnosis.findMany({
+      // `isActive` já não pode mudar (o registo é imutável): mantém-se apenas
+      // para respeitar o histórico anterior a esta regra. A exclusão real dos
+      // diagnósticos anulados é feita pelas adendas `ANULACAO`, mais abaixo.
       where: { clinicId, patientId, isActive: true },
       orderBy: [{ kind: "asc" }, { recordedAt: "desc" }],
-      take: 10,
+      take: 30,
       select: { id: true, description: true, code: true, codeSystem: true, kind: true, certainty: true, recordedAt: true, doctor: { select: { name: true } } },
     }),
     prisma.prescription.findMany({
@@ -488,9 +584,29 @@ export async function getPatientClinicalSummary(clinicId: string, patientId: str
     }),
   ]);
 
+  // Adendas de tudo o que o resumo mostra: o diagnóstico anulado sai dos
+  // problemas activos sem que a linha original seja tocada.
+  const addenda = await loadAddenda(clinicId, [
+    ...allergies.map((a) => ({ type: "ALLERGY" as ClinicalRecordType, id: a.id })),
+    ...diagnoses.map((d) => ({ type: "DIAGNOSIS" as ClinicalRecordType, id: d.id })),
+    ...prescriptions.map((p) => ({ type: "PRESCRIPTION" as ClinicalRecordType, id: p.id })),
+  ]);
+  const addendaOf = (type: ClinicalRecordType, id: string) => addenda.get(`${type}:${id}`) ?? [];
+  const isRefuted = (type: ClinicalRecordType, id: string) =>
+    addendaOf(type, id).some((addendum) => addendum.kind === "ANULACAO");
+
+  const activeDiagnoses = diagnoses
+    .filter((d) => !isRefuted("DIAGNOSIS", d.id))
+    .slice(0, 10)
+    .map((d) => ({ ...d, refuted: false, addenda: addendaOf("DIAGNOSIS", d.id) }));
+  const activeAllergies = allergies
+    .filter((a) => !isRefuted("ALLERGY", a.id))
+    .map((a) => ({ ...a, addenda: addendaOf("ALLERGY", a.id) }));
+  const activePrescriptions = prescriptions.map((p) => ({ ...p, addenda: addendaOf("PRESCRIPTION", p.id) }));
+
   const t = await getTranslator();
   const alerts: ClinicalAlert[] = [];
-  for (const a of allergies) {
+  for (const a of activeAllergies) {
     alerts.push({
       kind: "ALERGIA",
       severity: a.severity === "GRAVE" || a.severity === "FATAL" ? "CRITICO" : "AVISO",
@@ -515,9 +631,9 @@ export async function getPatientClinicalSummary(clinicId: string, patientId: str
   const bmi = latestVitals?.bmi ?? computeBmi(latestVitals?.weightKg, latestVitals?.heightCm);
 
   return {
-    allergies,
-    diagnoses,
-    prescriptions,
+    allergies: activeAllergies,
+    diagnoses: activeDiagnoses,
+    prescriptions: activePrescriptions,
     latestVitals: latestVitals ? { ...latestVitals, bmi, bmiBand: bmiBand(bmi) } : null,
     openOrders,
     activeAdmission,

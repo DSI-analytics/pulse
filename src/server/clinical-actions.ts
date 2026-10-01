@@ -2,15 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import type { Prisma } from "@prisma/client";
+import type { ClinicalAddendumKind, ClinicalRecordType, Prisma } from "@prisma/client";
 import { auditAs } from "@/lib/audit";
 import { requireUser, type SessionUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can, type Permission } from "@/lib/rbac";
 import { checkAllergyConflicts, normaliseSubstance, type AllergyWarning } from "@/lib/domain/allergy-check";
 import { computeBmi, parseVital, type VitalKey } from "@/lib/domain/vitals";
+import { isImmutabilityError } from "@/lib/domain/clinical-immutability";
+import { isValidIcdCode, normaliseIcdCode } from "@/lib/domain/icd";
+import { lookupIcdCode, rememberIcdCode } from "@/server/icd11";
 import { formatSequence, withNumberRetry } from "@/lib/sequences";
-import { getTranslator } from "@/i18n/server";
+import { getTranslator, getUiContext } from "@/i18n/server";
 import type { Translator } from "@/i18n/translate";
 import type { MessageKey } from "@/i18n/types";
 
@@ -22,7 +25,8 @@ import type { MessageKey } from "@/i18n/types";
  *  - o `clinicId` vem sempre da sessão — nunca do payload;
  *  - operações com vários registos correm em transacção;
  *  - cada escrita gera um evento de auditoria com before/after;
- *  - nada de clínico é apagado fisicamente: usa-se estado/inactivação.
+ *  - o prontuário é append-only: nada é alterado nem apagado — corrige-se
+ *    acrescentando um registo novo ou uma adenda (`ClinicalAddendum`).
  */
 
 export type ActionResult<T = unknown> = ({ ok: true } & T) | { error: string };
@@ -34,6 +38,36 @@ async function guard(permission: Permission): Promise<Access> {
   const t = await getTranslator();
   if (!can(user.role, permission)) return { ok: false, error: t("clinical.errors.noPermission") };
   return { ok: true, user, clinicId: user.clinicId, t };
+}
+
+/** Basta uma das permissões indicadas. */
+async function guardAny(...permissions: Permission[]): Promise<Access> {
+  const user = await requireUser();
+  const t = await getTranslator();
+  if (!permissions.some((permission) => can(user.role, permission))) {
+    return { ok: false, error: t("clinical.errors.noPermission") };
+  }
+  return { ok: true, user, clinicId: user.clinicId, t };
+}
+
+/**
+ * Rede de segurança: as acções recusam explicitamente o que é imutável, mas se
+ * alguma escrita escapar, o gatilho da base de dados trava-a — e o erro cru do
+ * PostgreSQL é aqui traduzido.
+ */
+function immutabilityMessage(error: unknown, t: Translator): string | null {
+  return isImmutabilityError(error) ? t("clinical.immutable.blocked") : null;
+}
+
+/** Corre uma escrita clínica traduzindo a recusa do gatilho de imutabilidade. */
+async function clinicalWrite<T>(t: Translator, run: () => Promise<T>): Promise<{ ok: true; value: T } | { error: string }> {
+  try {
+    return { ok: true, value: await run() };
+  } catch (error) {
+    const blocked = immutabilityMessage(error, t);
+    if (blocked) return { error: blocked };
+    throw error;
+  }
 }
 
 /**
@@ -147,18 +181,24 @@ export async function closeEncounter(encounterId: string, summary: string, outco
   });
   if (!existing) return { error: access.t("clinical.errors.encounterNotFound") };
   if (existing.status === "CANCELADO") return { error: access.t("clinical.errors.encounterCancelled") };
+  // Episódio já concluído: nada a alterar — o que houver a acrescentar é adenda.
+  if (existing.status !== "EM_CURSO") return { error: access.t("clinical.immutable.recordLocked") };
 
-  const updated = await prisma.encounter.update({
-    where: { id: existing.id },
-    data: {
-      status: "CONCLUIDO",
-      endedAt: new Date(),
-      summary: orNull(summary, 5000),
-      outcome: orNull(outcome, 2000),
-      version: { increment: 1 },
-    },
-    select: { id: true, status: true, endedAt: true, summary: true, outcome: true },
-  });
+  const write = await clinicalWrite(access.t, () =>
+    prisma.encounter.update({
+      where: { id: existing.id },
+      data: {
+        status: "CONCLUIDO",
+        endedAt: new Date(),
+        summary: orNull(summary, 5000),
+        outcome: orNull(outcome, 2000),
+        version: { increment: 1 },
+      },
+      select: { id: true, status: true, endedAt: true, summary: true, outcome: true },
+    }),
+  );
+  if ("error" in write) return write;
+  const updated = write.value;
 
   await auditAs(actor(access.user), {
     action: "encounter.close",
@@ -243,13 +283,21 @@ export async function recordVitals(values: VitalsValues): Promise<ActionResult<{
 // Diagnósticos
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * O diagnóstico NÃO é texto livre: é escolhido na CID-11 (ICD-11) da OMS. O
+ * `description` guardado é o título oficial do catálogo; o texto livre do
+ * médico vai para `notes`.
+ */
 const diagnosisSchema = z.object({
   patientId: z.string().min(1),
-  description: z.string().trim().min(3, "clinical.errors.diagnosisDescription"),
+  code: z.string().trim().min(1, "clinical.icd.required"),
+  codeSystem: z.string().trim().max(32).optional().default("ICD-11"),
+  codeUri: z.string().trim().max(400).optional().default(""),
+  codeRelease: z.string().trim().max(32).optional().default(""),
+  /** Título devolvido pelo selector — só é aceite se o código existir. */
+  title: z.string().trim().max(500).optional().default(""),
   kind: z.enum(["PRINCIPAL", "SECUNDARIO", "DIFERENCIAL"]).default("PRINCIPAL"),
-  certainty: z.enum(["PROVISORIO", "CONFIRMADO", "REFUTADO"]).default("PROVISORIO"),
-  code: z.string().trim().max(32).optional().default(""),
-  codeSystem: z.string().trim().max(32).optional().default(""),
+  certainty: z.enum(["PROVISORIO", "CONFIRMADO"]).default("PROVISORIO"),
   onsetDate: z.string().optional().default(""),
   notes: z.string().max(4000).optional().default(""),
   encounterId: z.string().optional().default(""),
@@ -257,6 +305,40 @@ const diagnosisSchema = z.object({
 });
 
 export type DiagnosisValues = z.input<typeof diagnosisSchema>;
+
+/** Idioma dos títulos da CID-11 neste pedido. */
+async function uiLanguage(): Promise<string> {
+  try {
+    return (await getUiContext()).locale;
+  } catch {
+    return "pt";
+  }
+}
+
+/**
+ * Confirma o código na CID-11 e devolve o título oficial. O catálogo vem
+ * sempre da OMS (ou da cache local do que já foi usado) — nunca do formulário.
+ */
+async function resolveIcdDiagnosis(
+  t: Translator,
+  values: { code: string; codeSystem?: string; codeUri?: string; codeRelease?: string },
+): Promise<{ code: string; description: string; codeUri: string | null; codeRelease: string | null } | { error: string }> {
+  if ((values.codeSystem || "ICD-11") !== "ICD-11") return { error: t("clinical.errors.diagnosisCodeSystem") };
+  const code = normaliseIcdCode(values.code);
+  if (!isValidIcdCode(code)) return { error: t("clinical.icd.required") };
+
+  const language = await uiLanguage();
+  const hit = await lookupIcdCode(code, language);
+  if (!hit) return { error: t("clinical.errors.diagnosisCodeUnknown") };
+
+  await rememberIcdCode(hit, language);
+  return {
+    code: hit.code,
+    description: hit.title,
+    codeUri: hit.uri ?? orNull(values.codeUri, 400),
+    codeRelease: hit.release || orNull(values.codeRelease, 32),
+  };
+}
 
 export async function addDiagnosis(values: DiagnosisValues): Promise<ActionResult<{ id: string }>> {
   const access = await guard("consultation.conduct");
@@ -269,6 +351,9 @@ export async function addDiagnosis(values: DiagnosisValues): Promise<ActionResul
   const links = await resolveClinicalLinks(access.t, access.clinicId, patient.id, parsed.data);
   if ("error" in links) return links;
 
+  const coded = await resolveIcdDiagnosis(access.t, parsed.data);
+  if ("error" in coded) return coded;
+
   const created = await prisma.diagnosis.create({
     data: {
       clinicId: access.clinicId,
@@ -277,9 +362,11 @@ export async function addDiagnosis(values: DiagnosisValues): Promise<ActionResul
       consultationId: links.consultationId,
       kind: parsed.data.kind,
       certainty: parsed.data.certainty,
-      code: orNull(parsed.data.code, 32),
-      codeSystem: orNull(parsed.data.codeSystem, 32),
-      description: parsed.data.description,
+      code: coded.code,
+      codeSystem: "ICD-11",
+      codeUri: coded.codeUri,
+      codeRelease: coded.codeRelease,
+      description: coded.description,
       onsetDate: parseDate(parsed.data.onsetDate),
       notes: orNull(parsed.data.notes, 4000),
       doctorId: access.user.doctorId ?? null,
@@ -299,30 +386,169 @@ export async function addDiagnosis(values: DiagnosisValues): Promise<ActionResul
   return { ok: true, id: created.id };
 }
 
-/** Inactivação em vez de eliminação — o diagnóstico permanece no histórico. */
-export async function deactivateDiagnosis(id: string, reason: string): Promise<ActionResult> {
+/**
+ * Anulação de um diagnóstico.
+ *
+ * A linha `Diagnosis` NÃO é tocada: fica no histórico tal como foi escrita. A
+ * anulação é uma adenda (`ANULACAO`) que passa a acompanhá-la — é assim que a
+ * leitura do prontuário a exclui dos problemas activos.
+ */
+export async function refuteDiagnosis(id: string, reason: string): Promise<ActionResult<{ addendumId: string }>> {
   const access = await guard("consultation.conduct");
   if (!access.ok) return { error: access.error };
+
+  const body = trimmed(reason, 4000);
+  if (body.length < 3) return { error: access.t("clinical.errors.refuteReason") };
+
   const existing = await prisma.diagnosis.findFirst({
     where: { id, clinicId: access.clinicId },
-    select: { id: true, patientId: true, isActive: true, notes: true, certainty: true },
+    select: { id: true, patientId: true, encounterId: true, description: true, code: true },
   });
   if (!existing) return { error: access.t("clinical.errors.diagnosisNotFound") };
 
-  const updated = await prisma.diagnosis.update({
-    where: { id: existing.id },
-    data: { isActive: false, certainty: "REFUTADO", notes: orNull(reason, 4000) ?? existing.notes },
-    select: { id: true, isActive: true, certainty: true },
+  const already = await prisma.clinicalAddendum.findFirst({
+    where: { clinicId: access.clinicId, targetType: "DIAGNOSIS", targetId: existing.id, kind: "ANULACAO" },
+    select: { id: true },
   });
+  if (already) return { error: access.t("clinical.errors.diagnosisAlreadyRefuted") };
+
+  const created = await prisma.clinicalAddendum.create({
+    data: {
+      clinicId: access.clinicId,
+      patientId: existing.patientId,
+      targetType: "DIAGNOSIS",
+      targetId: existing.id,
+      kind: "ANULACAO",
+      body,
+      encounterId: existing.encounterId,
+      doctorId: access.user.doctorId ?? null,
+      authorId: access.user.userId,
+    },
+    select: { id: true },
+  });
+
   await auditAs(actor(access.user), {
-    action: "diagnosis.deactivate",
+    action: "diagnosis.refute",
     entity: "Diagnosis",
     entityId: existing.id,
-    before: existing as unknown as Record<string, unknown>,
-    after: updated as unknown as Record<string, unknown>,
+    after: { addendumId: created.id, code: existing.code, description: existing.description },
+    metadata: { patientId: existing.patientId, kind: "ANULACAO" },
   });
   revalidatePatient(existing.patientId);
-  return { ok: true };
+  return { ok: true, addendumId: created.id };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Adendas ao prontuário
+// ─────────────────────────────────────────────────────────────────────────────
+
+const addendumSchema = z.object({
+  patientId: z.string().min(1, "clinical.errors.patientRequired"),
+  targetType: z.enum([
+    "ENCOUNTER", "CONSULTATION", "DIAGNOSIS", "VITAL_SIGN", "ALLERGY", "PRESCRIPTION",
+    "DIAGNOSTIC_ORDER", "DIAGNOSTIC_RESULT", "PROCEDURE", "TREATMENT", "ADMISSION", "ATTACHMENT",
+  ]),
+  targetId: z.string().min(1, "clinical.errors.addendumTargetNotFound"),
+  kind: z.enum(["ADENDA", "CORRECCAO", "ANULACAO", "COMENTARIO"]).default("ADENDA"),
+  body: z.string().trim().min(3, "clinical.errors.addendumBody").max(8000),
+  replacementId: z.string().optional().default(""),
+});
+
+export interface AddendumValues {
+  patientId: string;
+  targetType: ClinicalRecordType;
+  targetId: string;
+  kind: ClinicalAddendumKind;
+  body: string;
+  replacementId?: string;
+}
+
+/**
+ * Localiza o registo alvo dentro da clínica e do paciente da sessão. Impede
+ * que um id manipulado no formulário ligue uma adenda a outra instituição.
+ */
+async function findAddendumTarget(
+  clinicId: string,
+  patientId: string,
+  targetType: ClinicalRecordType,
+  targetId: string,
+): Promise<{ id: string; encounterId: string | null } | null> {
+  const scope = { id: targetId, clinicId };
+  const withPatient = { ...scope, patientId };
+  switch (targetType) {
+    case "ENCOUNTER":
+      return prisma.encounter.findFirst({ where: withPatient, select: { id: true } }).then((r) => (r ? { id: r.id, encounterId: r.id } : null));
+    case "CONSULTATION":
+      return prisma.consultation.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    case "DIAGNOSIS":
+      return prisma.diagnosis.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    case "VITAL_SIGN":
+      return prisma.vitalSign.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    case "ALLERGY":
+      return prisma.allergy.findFirst({ where: withPatient, select: { id: true } }).then((r) => (r ? { id: r.id, encounterId: null } : null));
+    case "PRESCRIPTION":
+      return prisma.prescription.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    case "DIAGNOSTIC_ORDER":
+      return prisma.diagnosticOrder.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    case "DIAGNOSTIC_RESULT":
+      return prisma.diagnosticResult
+        .findFirst({ where: { id: targetId, clinicId, order: { patientId } }, select: { id: true, order: { select: { encounterId: true } } } })
+        .then((r) => (r ? { id: r.id, encounterId: r.order.encounterId } : null));
+    case "PROCEDURE":
+      return prisma.clinicalProcedure.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    case "TREATMENT":
+      return prisma.treatment.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    case "ADMISSION":
+      return prisma.admission.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    case "ATTACHMENT":
+      return prisma.clinicalAttachment.findFirst({ where: withPatient, select: { id: true, encounterId: true } });
+    default:
+      return null;
+  }
+}
+
+/**
+ * Acrescenta uma adenda (adenda, correcção, anulação ou comentário) a um
+ * registo clínico. É a única forma de "alterar" o prontuário: o registo
+ * original permanece intacto.
+ */
+export async function addClinicalAddendum(values: AddendumValues): Promise<ActionResult<{ id: string }>> {
+  const access = await guardAny("consultation.conduct", "encounter.manage");
+  if (!access.ok) return { error: access.error };
+  const parsed = addendumSchema.safeParse(values);
+  if (!parsed.success) return { error: issueMessage(access.t, parsed.error) };
+
+  const patient = await requirePatient(access.clinicId, parsed.data.patientId);
+  if (!patient) return { error: access.t("clinical.errors.patientNotFound") };
+
+  const target = await findAddendumTarget(access.clinicId, patient.id, parsed.data.targetType, parsed.data.targetId);
+  if (!target) return { error: access.t("clinical.errors.addendumTargetNotFound") };
+
+  const created = await prisma.clinicalAddendum.create({
+    data: {
+      clinicId: access.clinicId,
+      patientId: patient.id,
+      targetType: parsed.data.targetType,
+      targetId: target.id,
+      kind: parsed.data.kind,
+      body: parsed.data.body,
+      replacementId: parsed.data.replacementId || null,
+      encounterId: target.encounterId,
+      doctorId: access.user.doctorId ?? null,
+      authorId: access.user.userId,
+    },
+    select: { id: true, kind: true, targetType: true, targetId: true },
+  });
+
+  await auditAs(actor(access.user), {
+    action: "clinical.addendum",
+    entity: "ClinicalAddendum",
+    entityId: created.id,
+    after: created as unknown as Record<string, unknown>,
+    metadata: { patientId: patient.id, targetType: parsed.data.targetType, targetId: target.id, kind: parsed.data.kind },
+  });
+  revalidatePatient(patient.id);
+  return { ok: true, id: created.id };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -417,7 +643,11 @@ export async function setAllergyStatus(
   });
   if (!existing) return { error: access.t("clinical.errors.allergyNotFound") };
 
-  const updated = await prisma.allergy.update({ where: { id: existing.id }, data: { status }, select: { id: true, status: true } });
+  const write = await clinicalWrite(access.t, () =>
+    prisma.allergy.update({ where: { id: existing.id }, data: { status }, select: { id: true, status: true } }),
+  );
+  if ("error" in write) return write;
+  const updated = write.value;
   await auditAs(actor(access.user), {
     action: "allergy.status",
     entity: "Allergy",
@@ -547,7 +777,7 @@ export async function createPrescription(values: PrescriptionValues): Promise<Ac
     superseded = { id: previous.id, number: previous.number, status: previous.status };
   }
 
-  const created = await withNumberRetry(async () =>
+  const write = await clinicalWrite(access.t, () => withNumberRetry(async () =>
     prisma.$transaction(async (tx) => {
       const count = await tx.prescription.count({ where: { clinicId: access.clinicId } });
       const prescription = await tx.prescription.create({
@@ -591,7 +821,9 @@ export async function createPrescription(values: PrescriptionValues): Promise<Ac
       }
       return prescription;
     }),
-  );
+  ));
+  if ("error" in write) return write;
+  const created = write.value;
 
   await auditAs(actor(access.user), {
     action: "prescription.create",
@@ -631,11 +863,15 @@ export async function setPrescriptionStatus(
   });
   if (!existing) return { error: access.t("clinical.errors.prescriptionNotFound") };
 
-  const updated = await prisma.prescription.update({
-    where: { id: existing.id },
-    data: { status, cancelReason: status === "CANCELADA" ? orNull(reason, 500) : null, version: { increment: 1 } },
-    select: { id: true, status: true },
-  });
+  const write = await clinicalWrite(access.t, () =>
+    prisma.prescription.update({
+      where: { id: existing.id },
+      data: { status, cancelReason: status === "CANCELADA" ? orNull(reason, 500) : null, version: { increment: 1 } },
+      select: { id: true, status: true },
+    }),
+  );
+  if ("error" in write) return write;
+  const updated = write.value;
   await auditAs(actor(access.user), {
     action: "prescription.status",
     entity: "Prescription",
@@ -732,17 +968,21 @@ export async function setDiagnosticOrderStatus(
   if (!existing) return { error: access.t("clinical.errors.orderNotFound") };
 
   const now = new Date();
-  const updated = await prisma.diagnosticOrder.update({
-    where: { id: existing.id },
-    data: {
-      status,
-      scheduledAt: status === "AGENDADO" ? (existing.scheduledAt ?? now) : existing.scheduledAt,
-      collectedAt: status === "RECOLHIDO" ? (existing.collectedAt ?? now) : existing.collectedAt,
-      cancelReason: status === "CANCELADO" ? orNull(reason, 500) : null,
-      version: { increment: 1 },
-    },
-    select: { id: true, status: true },
-  });
+  const write = await clinicalWrite(access.t, () =>
+    prisma.diagnosticOrder.update({
+      where: { id: existing.id },
+      data: {
+        status,
+        scheduledAt: status === "AGENDADO" ? (existing.scheduledAt ?? now) : existing.scheduledAt,
+        collectedAt: status === "RECOLHIDO" ? (existing.collectedAt ?? now) : existing.collectedAt,
+        cancelReason: status === "CANCELADO" ? orNull(reason, 500) : null,
+        version: { increment: 1 },
+      },
+      select: { id: true, status: true },
+    }),
+  );
+  if ("error" in write) return write;
+  const updated = write.value;
 
   await auditAs(actor(access.user), {
     action: "lab.order.status",
@@ -790,14 +1030,16 @@ export async function recordDiagnosticResult(values: DiagnosticResultValues): Pr
   });
   if (!order) return { error: access.t("clinical.errors.orderNotFound") };
   if (order.status === "CANCELADO") return { error: access.t("clinical.errors.orderCancelled") };
+  // O resultado é lançado UMA vez. Corrigir um resultado já lançado faz-se com
+  // uma adenda — nunca reescrevendo os parâmetros anteriores.
+  if (order.result) return { error: access.t("clinical.errors.resultAlreadyRecorded") };
 
   const now = new Date();
   const performedAt = parseDate(parsed.data.performedAt) ?? now;
 
-  const saved = await prisma.$transaction(async (tx) => {
-    const result = await tx.diagnosticResult.upsert({
-      where: { orderId: order.id },
-      create: {
+  const write = await clinicalWrite(access.t, () => prisma.$transaction(async (tx) => {
+    const result = await tx.diagnosticResult.create({
+      data: {
         clinicId: access.clinicId,
         orderId: order.id,
         conclusion: orNull(parsed.data.conclusion, 4000),
@@ -807,19 +1049,10 @@ export async function recordDiagnosticResult(values: DiagnosticResultValues): Pr
         validatedAt: parsed.data.validate ? now : null,
         validatedById: parsed.data.validate ? access.user.userId : null,
       },
-      update: {
-        conclusion: orNull(parsed.data.conclusion, 4000),
-        notes: orNull(parsed.data.notes, 4000),
-        performedAt,
-        performedBy: orNull(parsed.data.performedBy, 160),
-        ...(parsed.data.validate ? { validatedAt: now, validatedById: access.user.userId } : {}),
-      },
       select: { id: true },
     });
 
-    // Os parâmetros são substituídos em bloco dentro da transacção; o histórico
-    // da alteração fica no log de auditoria.
-    await tx.diagnosticResultItem.deleteMany({ where: { resultId: result.id } });
+    // Os parâmetros são criados uma única vez, com o resultado.
     if (parsed.data.items.length) {
       await tx.diagnosticResultItem.createMany({
         data: parsed.data.items.map((item) => ({
@@ -856,7 +1089,9 @@ export async function recordDiagnosticResult(values: DiagnosticResultValues): Pr
     });
 
     return result;
-  });
+  }));
+  if ("error" in write) return write;
+  const saved = write.value;
 
   await auditAs(actor(access.user), {
     action: "lab.result.record",
@@ -1060,7 +1295,7 @@ export async function dischargeAdmission(
 
   const dischargedAt = parseDate(values.dischargedAt) ?? new Date();
 
-  const updated = await prisma.$transaction(async (tx) => {
+  const write = await clinicalWrite(access.t, () => prisma.$transaction(async (tx) => {
     const admission = await tx.admission.update({
       where: { id: existing.id },
       data: {
@@ -1080,7 +1315,9 @@ export async function dischargeAdmission(
       });
     }
     return admission;
-  });
+  }));
+  if ("error" in write) return write;
+  const updated = write.value;
 
   await auditAs(actor(access.user), {
     action: "admission.discharge",

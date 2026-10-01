@@ -108,6 +108,7 @@ const agenda = {
     coverage: "Cobertura",
     private: "Particular",
     expectedAmount: "Valor previsto",
+    patientParticipation: "Participação do paciente",
     patientRegistered: "Paciente {name} registado",
     created: "Marcação criada com sucesso",
     errors: {
@@ -117,6 +118,7 @@ const agenda = {
       timeUnavailable: "A hora escolhida não está disponível para o médico.",
       serviceRequired: "Indique qual o exame/procedimento a efectuar.",
       pastDate: "Não é possível agendar numa data/hora passada.",
+      minimumLead: "O horário escolhido não respeita a antecedência mínima configurada pela clínica.",
       nameTooShort: "Nome demasiado curto",
       invalidPhone: "Telefone inválido",
       noPermission: "Sem permissão.",

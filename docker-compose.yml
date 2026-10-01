@@ -19,6 +19,19 @@ services:
       timeout: 5s
       retries: 10
 
+  # API oficial da CID-11, acessível apenas na rede interna do Compose.
+  # A imagem inclui a classificação 2026 em português, espanhol e inglês.
+  icd11:
+    image: whoicd/icd-api:latest
+    container_name: pulso-icd11
+    restart: unless-stopped
+    environment:
+      acceptLicense: ${ICD_ACCEPT_LICENSE:?defina ICD_ACCEPT_LICENSE=true no .env}
+      saveAnalytics: ${ICD_SAVE_ANALYTICS:-false}
+      include: ${ICD_CONTAINER_INCLUDE:-2026-01_en-es-pt}
+    expose:
+      - "80"
+
   # The application itself. Start everything with:  docker compose up -d
   # (omit this service if you only want the database for local development).
   app:
@@ -28,6 +41,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      icd11:
+        condition: service_started
     environment:
       DATABASE_URL: postgresql://pulso:pulso@db:5432/pulso?schema=public
       # Generate with: openssl rand -base64 48
@@ -43,6 +58,14 @@ services:
       APP_TZ: Africa/Maputo
       APP_CURRENCY: MZN
       APP_LOCALE: pt
+      # Dentro do Compose, a API da OMS é sempre resolvida pelo nome do serviço.
+      ICD_API_BASE_URL: http://icd11
+      ICD_API_TOKEN_URL: ${ICD_API_TOKEN_URL:-https://icdaccessmanagement.who.int/connect/token}
+      # A instalação local da OMS não usa OAuth.
+      ICD_API_CLIENT_ID: ""
+      ICD_API_CLIENT_SECRET: ""
+      ICD_API_RELEASE: ${ICD_API_RELEASE:-2026-01}
+      ICD_API_LANGUAGE: ${ICD_API_LANGUAGE:-pt}
     ports:
       - "3000:3000"
 

@@ -7,10 +7,12 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { CLINIC_TZ } from "@/lib/datetime";
 import { generateDaySlots, type WeeklyRule } from "@/lib/domain/availability";
+import { minimumBookableAt } from "@/lib/domain/booking-policy";
 import { nameKey, phoneKey } from "@/lib/domain/patient-matching";
 import { prisma } from "@/lib/prisma";
 import type { PublicBookingPrincipal } from "@/lib/public-booking-auth";
 import { formatSequence, withNumberRetry } from "@/lib/sequences";
+import { getMinimumBookingLeadMinutes } from "@/server/booking-policy";
 
 /**
  * Marcação online a partir do website institucional — o canal público.
@@ -61,11 +63,12 @@ export interface PublicBookingContext {
   }>;
   services: Array<{ id: string; name: string; category: string; source: "EXAME" | "PROCEDIMENTO"; basePrice: number }>;
   horizonDays: number;
+  minBookingLeadMinutes: number;
 }
 
 /** Catálogo público: quem atende, em que especialidade e a que preço. */
 export async function getPublicBookingContext(principal: PublicBookingPrincipal): Promise<PublicBookingContext> {
-  const [clinic, specialties, doctors, services] = await Promise.all([
+  const [clinic, specialties, doctors, services, minBookingLeadMinutes] = await Promise.all([
     prisma.clinic.findUniqueOrThrow({
       where: { id: principal.clinicId },
       select: { name: true, phone: true, email: true, address: true, city: true },
@@ -94,6 +97,7 @@ export async function getPublicBookingContext(principal: PublicBookingPrincipal)
       orderBy: [{ category: "asc" }, { name: "asc" }],
       select: { id: true, name: true, category: true, source: true, basePrice: true },
     }),
+    getMinimumBookingLeadMinutes(principal.clinicId),
   ]);
 
   return {
@@ -106,6 +110,7 @@ export async function getPublicBookingContext(principal: PublicBookingPrincipal)
     })),
     services: services.map((service) => ({ ...service, source: service.source as "EXAME" | "PROCEDIMENTO" })),
     horizonDays: MAX_HORIZON_DAYS,
+    minBookingLeadMinutes,
   };
 }
 
@@ -125,16 +130,19 @@ export async function getPublicDoctorAvailability(
     return { error: `Só é possível marcar até ${MAX_HORIZON_DAYS} dias de antecedência.` };
   }
 
-  const doctor = await prisma.doctor.findFirst({
-    where: { id: doctorId, clinicId: principal.clinicId, status: "ACTIVO" },
-    select: {
-      id: true,
-      schedules: {
-        select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true },
+  const [doctor, minBookingLeadMinutes] = await Promise.all([
+    prisma.doctor.findFirst({
+      where: { id: doctorId, clinicId: principal.clinicId, status: "ACTIVO" },
+      select: {
+        id: true,
+        schedules: {
+          select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true },
+        },
+        availabilityExceptions: { where: { date: target }, select: { type: true, startTime: true, endTime: true } },
       },
-      availabilityExceptions: { where: { date: target }, select: { type: true, startTime: true, endTime: true } },
-    },
-  });
+    }),
+    getMinimumBookingLeadMinutes(principal.clinicId),
+  ]);
   if (!doctor) return { error: "Profissional não encontrado." };
 
   const rule = doctor.schedules.find(
@@ -158,9 +166,7 @@ export async function getPublicDoctorAvailability(
     busy.map((item) => ({ start: item.startAt, end: item.endAt })),
     CLINIC_TZ,
   )
-    // Uma hora de folga entre o pedido online e o horário: a recepção ainda tem
-    // de confirmar antes de o paciente sair de casa.
-    .filter((slot) => !slot.taken && slot.start.getTime() > Date.now() + 60 * 60_000)
+    .filter((slot) => !slot.taken && slot.start >= minimumBookableAt(new Date(), minBookingLeadMinutes))
     .map((slot) => ({ start: slot.start.toISOString(), label: formatInTimeZone(slot.start, CLINIC_TZ, "HH:mm") }));
 
   return { slots };

@@ -12,6 +12,13 @@ const plans = {
     namePlaceholder: "Ex.: Executivo",
     contractPrice: "Preço de contrato",
     copay: "Co-pagamento",
+    copayMode: "Tipo de participação",
+    copayFixed: "Valor fixo",
+    copayPercentage: "Percentagem",
+  },
+  copayModes: {
+    FIXED: "Valor fixo",
+    PERCENTAGE: "Percentagem",
   },
   searchPlaceholder: "Nome do plano…",
   columns: {
@@ -23,8 +30,13 @@ const plans = {
     term: "Prazo",
   },
   contractLine: "{plan} · contrato {price}",
+  participationFixed: "Participação do paciente: {amount}",
+  participationPercentage: "Participação do paciente: {percentage}%",
   termDays: "{days}d",
   empty: "Nenhum plano corresponde aos filtros.",
+  errors: {
+    invalidCopay: "Indique um valor válido ou uma percentagem entre 0 e 100.",
+  },
 };
 
 export default plans;

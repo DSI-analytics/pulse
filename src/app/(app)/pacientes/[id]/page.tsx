@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Phone, Mail, MapPin, CalendarClock, Stethoscope, Lock, Pill, FlaskConical, IdCard, Droplet } from "lucide-react";
+import { ArrowLeft, Phone, Mail, MapPin, CalendarClock, Stethoscope, Lock, Pill, FlaskConical, IdCard, Droplet, FileDown } from "lucide-react";
 import { requirePermission } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
@@ -16,8 +16,10 @@ import { ageInYears } from "@/server/patient-data";
 import { ClinicalAlerts } from "@/components/clinical/clinical-alerts";
 import { ClinicalTimeline } from "@/components/clinical/clinical-timeline";
 import { ClinicalRecordActions } from "@/components/clinical/clinical-record-actions";
+import { AddendumButton, RefuteDiagnosisButton } from "@/components/clinical/addendum-dialog";
 import { clinicalEnumLabel } from "@/components/clinical/enum-label";
 import { getFormatters, getTranslator } from "@/i18n/server";
+import { buttonVariants } from "@/components/ui/button";
 
 /** Símbolos de grupo sanguíneo — iguais em todos os idiomas. */
 const BLOOD_SYMBOL = {
@@ -51,6 +53,8 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
     laboratory: can(user.role, "laboratory.manage"),
   };
   const showActions = patient.isActive && Object.values(canRecord).some(Boolean);
+  /** Adendas: quem conduz consultas pode acrescentar ao registo — nunca alterá-lo. */
+  const canAddend = patient.isActive && showClinical && canRecord.diagnosis;
 
   const [appointments, invoiceAgg, noShows, clinical, timeline, specialties, doctors, medications] = await Promise.all([
     prisma.appointment.findMany({
@@ -144,23 +148,34 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
             {plan ? <Badge variant="info">{plan.insuranceCompany.name} · {plan.name}</Badge> : <Badge variant="neutral">{t("patients.private")}</Badge>}
           </div>
         </div>
-        {can(user.role, "patient.manage") && (
-          <EditPatientButton
-            patient={{
-              id: patient.id,
-              name: patient.name,
-              phone: patient.phone,
-              email: patient.email,
-              address: patient.address,
-              birthDate: patient.birthDate,
-              gender: patient.gender,
-              emergencyContactName: patient.emergencyContactName,
-              emergencyContactPhone: patient.emergencyContactPhone,
-            }}
-            action={updatePatientRecord}
-            deleteAction={deletePatientRecord}
-          />
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {showClinical && (
+            <Link
+              href={`/pacientes/${patient.id}/resumo-clinico`}
+              target="_blank"
+              className={buttonVariants({ variant: "secondary", size: "sm" })}
+            >
+              <FileDown className="size-4" /> {t("patients.transferSummary.action")}
+            </Link>
+          )}
+          {can(user.role, "patient.manage") && (
+            <EditPatientButton
+              patient={{
+                id: patient.id,
+                name: patient.name,
+                phone: patient.phone,
+                email: patient.email,
+                address: patient.address,
+                birthDate: patient.birthDate,
+                gender: patient.gender,
+                emergencyContactName: patient.emergencyContactName,
+                emergencyContactPhone: patient.emergencyContactPhone,
+              }}
+              action={updatePatientRecord}
+              deleteAction={deletePatientRecord}
+            />
+          )}
+        </div>
       </div>
 
       {showClinical && clinical && <ClinicalAlerts alerts={clinical.alerts} />}
@@ -239,7 +254,7 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
                   <div className="flex justify-between"><span className="text-muted-foreground">{t("patients.profile.insurer")}</span><span className="font-medium">{plan.insuranceCompany.name}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">{t("patients.profile.plan")}</span><span className="font-medium">{plan.name}</span></div>
                   <div className="flex justify-between"><span className="text-muted-foreground">{t("patients.profile.memberNumber")}</span><span className="font-mono">{patient.healthPlans[0].membershipNumber ?? "—"}</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">{t("patients.profile.copay")}</span><span className="tabular">{f.money(plan.patientCopay)}</span></div>
+                  <div className="flex justify-between"><span className="text-muted-foreground">{t("patients.profile.copay")}</span><span className="tabular">{plan.patientCopayMode === "PERCENTAGE" ? `${f.number(plan.patientCopayPercentBps / 100, 2)}%` : f.money(plan.patientCopay)}</span></div>
                 </div>
               ) : (
                 <p className="text-muted-foreground">{t("patients.profile.noPlan")}</p>
@@ -304,6 +319,13 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
                             </div>
                             <p className="mt-1 text-sm font-medium">{d.description}</p>
                             <p className="text-xs text-muted-foreground">{f.date(d.recordedAt)}{d.doctor ? ` · ${d.doctor.name}` : ""}</p>
+                            {/* O diagnóstico não se altera nem se apaga: junta-se uma adenda ou anula-se. */}
+                            {canAddend && (
+                              <div className="mt-1 flex flex-wrap justify-end gap-1">
+                                <AddendumButton patientId={patient.id} targetType="DIAGNOSIS" targetId={d.id} />
+                                <RefuteDiagnosisButton diagnosisId={d.id} />
+                              </div>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -396,6 +418,7 @@ export default async function PatientProfile({ params }: { params: Promise<{ id:
                   initialHasMore={timeline.hasMore}
                   specialties={specialties.map((s) => ({ value: s.id, label: s.name }))}
                   doctors={doctors.map((d) => ({ value: d.id, label: d.name }))}
+                  canAddend={canAddend}
                 />
               ) : null}
             </CardContent>

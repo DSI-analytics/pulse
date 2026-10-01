@@ -110,6 +110,7 @@ const agenda: Messages["agenda"] = {
     coverage: "Coverage",
     private: "Private",
     expectedAmount: "Expected amount",
+    patientParticipation: "Patient participation",
     patientRegistered: "Patient {name} registered",
     created: "Appointment created successfully",
     errors: {
@@ -119,6 +120,7 @@ const agenda: Messages["agenda"] = {
       timeUnavailable: "The selected time is not available for this doctor.",
       serviceRequired: "Specify which exam/procedure to perform.",
       pastDate: "Appointments cannot be booked in the past.",
+      minimumLead: "The selected time does not meet the clinic's configured minimum booking notice.",
       nameTooShort: "Name too short",
       invalidPhone: "Invalid phone number",
       noPermission: "Permission denied.",

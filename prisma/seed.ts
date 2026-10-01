@@ -39,24 +39,19 @@ async function main() {
   // reposição de ambiente de desenvolvimento.
   await prisma.$executeRawUnsafe('TRUNCATE TABLE "AuditLog"');
 
+  // Registos clínicos: gatilhos no PostgreSQL recusam DELETE (ver migração
+  // clinical_records_immutable_and_icd11). TRUNCATE é DDL e não passa por eles,
+  // por isso a protecção contra apagar registos não tem excepções na aplicação.
+  await prisma.$executeRawUnsafe(
+    'TRUNCATE TABLE "ClinicalAddendum", "ClinicalAttachment", "DiagnosticResultItem", "DiagnosticResult", "DiagnosticOrder", "PrescriptionItem", "Prescription", "ClinicalProcedure", "Treatment", "Admission", "VitalSign", "Diagnosis", "Allergy", "Consultation", "Encounter" RESTART IDENTITY CASCADE',
+  );
+
   // Order matters (FKs). Cascades handle most, but be explicit for clarity.
   await prisma.$transaction([
     prisma.fhirResource.deleteMany(),
     prisma.apiClient.deleteMany(),
     prisma.loginAttempt.deleteMany(),
-    prisma.clinicalAttachment.deleteMany(),
-    prisma.diagnosticResultItem.deleteMany(),
-    prisma.diagnosticResult.deleteMany(),
-    prisma.diagnosticOrder.deleteMany(),
-    prisma.prescriptionItem.deleteMany(),
-    prisma.prescription.deleteMany(),
     prisma.medication.deleteMany(),
-    prisma.clinicalProcedure.deleteMany(),
-    prisma.treatment.deleteMany(),
-    prisma.admission.deleteMany(),
-    prisma.vitalSign.deleteMany(),
-    prisma.diagnosis.deleteMany(),
-    prisma.allergy.deleteMany(),
     prisma.patientIdentityDocument.deleteMany(),
     prisma.userClinicAccess.deleteMany(),
     prisma.notification.deleteMany(),
@@ -64,9 +59,7 @@ async function main() {
     prisma.invoiceItem.deleteMany(),
     prisma.invoice.deleteMany(),
     prisma.revenue.deleteMany(),
-    prisma.consultation.deleteMany(),
     prisma.appointment.deleteMany(),
-    prisma.encounter.deleteMany(),
     prisma.inventoryMovement.deleteMany(),
     prisma.purchaseItem.deleteMany(),
     prisma.purchase.deleteMany(),

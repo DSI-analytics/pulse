@@ -253,6 +253,9 @@ const pt = {
       alerts: "Alertas",
       slotMinutes: "Duração padrão da consulta",
       slotMinutesHint: "Proposta ao criar uma nova marcação.",
+      bookingLead: "Antecedência mínima da marcação",
+      bookingLeadHint: "Use 0 para permitir o próximo horário livre de hoje; aplica-se à recepção, portal do paciente e website.",
+      bookingLeadUnit: "Unidade da antecedência",
       consultationFee: "Preço padrão da consulta",
       consultationFeeHint: "Usado quando o serviço não tem preço próprio.",
       lowStockLeadDays: "Antecedência do alerta de stock",
@@ -262,12 +265,15 @@ const pt = {
       receivableOverdueDays: "Cobranças em atraso",
       receivableOverdueDaysHint: "Facturas por pagar há mais tempo do que isto são sinalizadas.",
       minutes: "min",
+      minutesLong: "minutos",
+      hours: "horas",
       days: "dias",
       saved: "Agenda e alertas actualizados.",
       errors: {
         slotMinutes: "A duração deve estar entre 5 e 240 minutos.",
         fee: "Indique um preço válido.",
         days: "Indique um número de dias entre 1 e 365.",
+        bookingLead: "A antecedência deve estar entre 0 minutos e 30 dias.",
       },
     },
 
@@ -341,6 +347,22 @@ const pt = {
       },
       status: "Estado",
       token: "Token",
+      // Catálogo CID-11 (ICD-11) da OMS. Configurado por ambiente — as
+      // credenciais nunca são guardadas na base de dados.
+      icd: {
+        title: "CID-11 (OMS)",
+        hint: "Catálogo oficial usado pelo médico para codificar o diagnóstico.",
+        configured: "Configurado",
+        notConfigured: "Não configurado",
+        baseUrl: "Endereço da API",
+        release: "Versão",
+        language: "Idioma dos títulos",
+        localDeployment: "Instalação local da OMS (sem credenciais)",
+        docsHint: "Defina ICD_API_CLIENT_ID e ICD_API_CLIENT_SECRET, ou ICD_API_BASE_URL para a instalação local.",
+        status: "Ligação",
+        reachable: "Acessível",
+        unreachable: "Inacessível",
+      },
       errors: {
         name: "Indique o nome do cliente.",
         duplicate: "Já existe um cliente da API com esse nome.",

@@ -14,6 +14,13 @@ const plans: Messages["plans"] = {
     namePlaceholder: "E.g. Executive",
     contractPrice: "Contract price",
     copay: "Co-payment",
+    copayMode: "Participation type",
+    copayFixed: "Fixed amount",
+    copayPercentage: "Percentage",
+  },
+  copayModes: {
+    FIXED: "Fixed amount",
+    PERCENTAGE: "Percentage",
   },
   searchPlaceholder: "Plan name…",
   columns: {
@@ -25,8 +32,13 @@ const plans: Messages["plans"] = {
     term: "Term",
   },
   contractLine: "{plan} · contract {price}",
+  participationFixed: "Patient participation: {amount}",
+  participationPercentage: "Patient participation: {percentage}%",
   termDays: "{days}d",
   empty: "No plans match the filters.",
+  errors: {
+    invalidCopay: "Enter a valid amount or a percentage between 0 and 100.",
+  },
 };
 
 export default plans;

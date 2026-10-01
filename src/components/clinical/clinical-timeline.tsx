@@ -13,6 +13,7 @@ import { loadPatientTimeline } from "@/server/timeline-actions";
 import type { TimelineEvent, TimelineEventType } from "@/server/clinical-record";
 import { useFormat, useT } from "@/i18n/client";
 import { clinicalEnumLabel } from "./enum-label";
+import { AddendumButton, AddendumList, type ClinicalAddendumView } from "./addendum-dialog";
 import { ProcessingPulse } from "@/components/processing-pulse";
 
 const ICON: Record<TimelineEventType, React.ComponentType<{ className?: string }>> = {
@@ -72,6 +73,7 @@ export function ClinicalTimeline({
   initialHasMore,
   specialties,
   doctors,
+  canAddend = false,
 }: {
   patientId: string;
   initialEvents: TimelineEvent[];
@@ -79,6 +81,8 @@ export function ClinicalTimeline({
   initialHasMore: boolean;
   specialties: TimelineFilterOption[];
   doctors: TimelineFilterOption[];
+  /** Se o perfil pode acrescentar adendas aos registos (nunca alterá-los). */
+  canAddend?: boolean;
 }) {
   const t = useT();
   const f = useFormat();
@@ -139,6 +143,15 @@ export function ClinicalTimeline({
     });
   }, [cursor, query]);
 
+  /** Mostra a adenda acabada de gravar sem perder as páginas já carregadas. */
+  const noteAddendum = React.useCallback((eventId: string, addendum: ClinicalAddendumView) => {
+    setEvents((prev) =>
+      prev.map((event) =>
+        event.id === eventId ? { ...event, addenda: [...event.addenda, addendum] } : event,
+      ),
+    );
+  }, []);
+
   return (
     <div className="space-y-3">
       <div className="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center">
@@ -164,6 +177,10 @@ export function ClinicalTimeline({
 
       {error && <p role="alert" className="text-[13px] text-danger">{error}</p>}
 
+      <p className="rounded-[10px] border border-border bg-fill-subtle px-3 py-2 text-[13px] text-muted-foreground">
+        {t("clinical.immutable.notice")}
+      </p>
+
       {events.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">{t("clinical.timeline.empty")}</p>
       ) : (
@@ -179,13 +196,25 @@ export function ClinicalTimeline({
                   <Badge variant="outline">{clinicalEnumLabel(t, event.type)}</Badge>
                   <time dateTime={event.at} className="text-xs text-muted-foreground">{`${f.dateMedium(event.at)}, ${f.time(event.at)}`}</time>
                   {event.badge && <Badge variant="neutral">{clinicalEnumLabel(t, event.badge)}</Badge>}
+                  {event.refuted && <Badge variant="danger">{t("clinical.addendum.refuted")}</Badge>}
                 </div>
-                <p className="mt-1 text-sm font-medium">{event.title}</p>
+                <p className={`mt-1 text-sm font-medium ${event.refuted ? "line-through decoration-1" : ""}`}>{event.title}</p>
                 {event.summary && <p className="mt-0.5 whitespace-pre-wrap text-[13px] text-muted-foreground">{event.summary}</p>}
                 {(event.professional || event.specialty) && (
                   <p className="mt-1 text-xs text-subtle-foreground">
                     {[event.professional, event.specialty].filter(Boolean).join(" · ")}
                   </p>
+                )}
+                <AddendumList addenda={event.addenda} />
+                {canAddend && (
+                  <div className="mt-2 flex justify-end">
+                    <AddendumButton
+                      patientId={patientId}
+                      targetType={event.recordType}
+                      targetId={event.recordId}
+                      onSaved={(addendum) => noteAddendum(event.id, addendum)}
+                    />
+                  </div>
                 )}
               </li>
             );

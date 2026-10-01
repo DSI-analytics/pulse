@@ -18,6 +18,8 @@ import {
   type BookingContext,
 } from "@/server/booking-actions";
 import { useFormat, useT } from "@/i18n/client";
+import { isStartBookable } from "@/lib/domain/booking-policy";
+import { splitInvoice } from "@/lib/domain/billing";
 
 type Patient = { id: string; code: string; name: string; phone: string | null };
 
@@ -155,6 +157,9 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
     : needsService
       ? service?.basePrice ?? 0
       : doctor?.consultationPrice ?? 0;
+  const patientDue = plan
+    ? splitInvoice(price, true, plan.patientCopay, plan.patientCopayMode, plan.patientCopayPercentBps).patientDue
+    : price;
 
   async function handleQuickCreate() {
     const res = await quickCreatePatient({ name: newName, phone: newPhone });
@@ -179,8 +184,8 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
     if (needsService && !serviceId) return setError(t("agenda.booking.errors.serviceRequired"));
 
     const startAt = time;
-    if (new Date(startAt).getTime() < Date.now() - 2 * 60_000) {
-      return setError(t("agenda.booking.errors.pastDate"));
+    if (!isStartBookable(new Date(startAt), new Date(), ctx?.minBookingLeadMinutes ?? 0)) {
+      return setError(t("agenda.booking.errors.minimumLead"));
     }
 
     setSaving(true);
@@ -408,9 +413,17 @@ function NovaMarcacaoDialog({ onClose }: { onClose: () => void }) {
           </Select>
         </div>
 
-        <div className="flex items-center justify-between rounded-md bg-surface-2 px-3 py-2 text-sm">
-          <span className="text-muted-foreground">{t("agenda.booking.expectedAmount")}</span>
-          <span className="font-semibold tabular">{f.money(price)}</span>
+        <div className="space-y-1 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-muted-foreground">{t("agenda.booking.expectedAmount")}</span>
+            <span className="font-semibold tabular">{f.money(price)}</span>
+          </div>
+          {plan && (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">{t("agenda.booking.patientParticipation")}</span>
+              <span className="font-semibold tabular text-foreground">{f.money(patientDue)}</span>
+            </div>
+          )}
         </div>
 
         {error && (

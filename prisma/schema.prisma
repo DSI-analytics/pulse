@@ -358,6 +358,7 @@ model Clinic {
   doctors               Doctor[]
   specialties           Specialty[]
   appointments          Appointment[]
+  appointmentCharges    AppointmentCharge[]
   consultations         Consultation[]
   insuranceCompanies    HealthInsuranceCompany[]
   healthPlans           HealthPlan[]
@@ -392,6 +393,7 @@ model Clinic {
   clinicalAttachments   ClinicalAttachment[]
   fhirResources         FhirResource[]
   apiClients            ApiClient[]
+  clinicalAddenda       ClinicalAddendum[]
   settings              ClinicSettings?
 }
 
@@ -433,6 +435,7 @@ model ClinicSettings {
   clinic                 Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   defaultSlotMinutes     Int      @default(30)
   defaultConsultationFee Int      @default(150000) // in centavos -> 1.500,00 MZN
+  minBookingLeadMinutes  Int      @default(0) // 0 permits same-day booking up to the next available slot
   lowStockLeadDays       Int      @default(10)
   expiryWarningDays      Int      @default(30)
   receivableOverdueDays  Int      @default(30)
@@ -440,26 +443,26 @@ model ClinicSettings {
 }
 
 model User {
-  id             String    @id @default(cuid())
+  id             String             @id @default(cuid())
   clinicId       String
-  clinic         Clinic    @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  clinic         Clinic             @relation(fields: [clinicId], references: [id], onDelete: Cascade)
   name           String
   email          String
   passwordHash   String
-  sessionVersion Int       @default(0)
+  sessionVersion Int                @default(0)
   role           UserRole
   // Optional custom role (extensibility path for tenant-defined roles).
   customRoleId   String?
-  customRole     Role?     @relation(fields: [customRoleId], references: [id])
-  isActive       Boolean   @default(true)
+  customRole     Role?              @relation(fields: [customRoleId], references: [id])
+  isActive       Boolean            @default(true)
   lastLoginAt    DateTime?
   /// Preferências de interface desta pessoa. `locale` nulo = idioma da clínica.
   locale         String?
   theme          ThemePreference    @default(SYSTEM)
   textSize       TextSizePreference @default(NORMAL)
   reduceMotion   Boolean            @default(false)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
 
   doctor              Doctor?
   auditLogs           AuditLog[]
@@ -479,6 +482,7 @@ model User {
   createdAdmissions    Admission[]          @relation("AdmissionCreatedBy")
   uploadedAttachments  ClinicalAttachment[] @relation("AttachmentUploadedBy")
   notifications        Notification[]
+  clinicalAddenda      ClinicalAddendum[]   @relation("AddendumAuthor")
 
   @@unique([clinicId, email])
   @@index([clinicId])
@@ -577,6 +581,7 @@ model Doctor {
   clinicalProcedures     ClinicalProcedure[]
   treatments             Treatment[]
   admissions             Admission[]
+  clinicalAddenda        ClinicalAddendum[]
 
   @@index([clinicId])
   @@index([clinicId, specialtyId])
@@ -700,6 +705,7 @@ model Patient {
   invoices          Invoice[]
   payments          Payment[]
   revenues          Revenue[]
+  clinicalAddenda   ClinicalAddendum[]
   portalAccess      PatientPortalAccess?
   identityDocuments PatientIdentityDocument[]
   encounters        Encounter[]
@@ -787,18 +793,25 @@ model HealthInsuranceCompany {
   @@index([clinicId])
 }
 
+enum PatientCopayMode {
+  FIXED
+  PERCENTAGE
+}
+
 model HealthPlan {
-  id                 String                 @id @default(cuid())
-  clinicId           String
-  clinic             Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
-  insuranceCompanyId String
-  insuranceCompany   HealthInsuranceCompany @relation(fields: [insuranceCompanyId], references: [id], onDelete: Cascade)
-  name               String
-  contractPrice      Int                    @default(120000) // clinic-negotiated price per consultation, centavos
-  patientCopay       Int                    @default(0) // centavos paid by patient
-  coverageNotes      String?
-  isActive           Boolean                @default(true)
-  createdAt          DateTime               @default(now())
+  id                     String                 @id @default(cuid())
+  clinicId               String
+  clinic                 Clinic                 @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  insuranceCompanyId     String
+  insuranceCompany       HealthInsuranceCompany @relation(fields: [insuranceCompanyId], references: [id], onDelete: Cascade)
+  name                   String
+  contractPrice          Int                    @default(120000) // clinic-negotiated price per consultation, centavos
+  patientCopay           Int                    @default(0) // centavos paid by patient
+  patientCopayMode       PatientCopayMode       @default(FIXED)
+  patientCopayPercentBps Int                    @default(0) // basis points: 1250 = 12.5%
+  coverageNotes          String?
+  isActive               Boolean                @default(true)
+  createdAt              DateTime               @default(now())
 
   patientLinks PatientHealthPlan[]
   appointments Appointment[]
@@ -844,6 +857,7 @@ model Service {
 
   invoiceItems       InvoiceItem[]
   appointments       Appointment[]
+  appointmentCharges AppointmentCharge[]
   diagnosticOrders   DiagnosticOrder[]
   clinicalProcedures ClinicalProcedure[]
 
@@ -894,12 +908,36 @@ model Appointment {
   consultation Consultation?
   invoice      Invoice?
   revenue      Revenue?
+  charges      AppointmentCharge[]
 
   @@index([clinicId])
   @@index([clinicId, startAt])
   @@index([doctorId, startAt])
   @@index([patientId])
   @@index([clinicId, status])
+}
+
+/// Exame, procedimento ou outro serviço acrescentado durante uma consulta.
+/// O preço é capturado no momento do registo e não acompanha alterações futuras
+/// do catálogo. A fatura só é emitida quando a consulta é concluída.
+model AppointmentCharge {
+  id            String      @id @default(cuid())
+  clinicId      String
+  clinic        Clinic      @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  appointmentId String
+  appointment   Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  serviceId     String
+  service       Service     @relation(fields: [serviceId], references: [id])
+  description   String
+  quantity      Int         @default(1)
+  unitPrice     Int
+  total         Int
+  createdById   String?
+  createdAt     DateTime    @default(now())
+
+  @@unique([appointmentId, serviceId])
+  @@index([clinicId, appointmentId])
+  @@index([serviceId])
 }
 
 model Consultation {
@@ -1320,6 +1358,8 @@ model Encounter {
   admissions       Admission[]
   attachments      ClinicalAttachment[]
 
+  addenda ClinicalAddendum[]
+
   @@unique([clinicId, number])
   @@index([clinicId, patientId, startedAt])
   @@index([clinicId, status])
@@ -1380,7 +1420,11 @@ model Diagnosis {
   certainty      DiagnosisCertainty @default(PROVISORIO)
   /// Terminologia clinica normalizada - preparado para ICD-10/CID e SNOMED CT.
   code           String?
-  codeSystem     String? // "ICD-10", "SNOMED-CT", "CID-10"
+  codeSystem     String? // "ICD-11", "ICD-10", "SNOMED-CT"
+  /// URI da entidade na classificação (CID-11) e versão usada — rastreabilidade
+  /// do código escolhido pelo médico.
+  codeUri        String?
+  codeRelease    String?
   description    String
   onsetDate      DateTime?          @db.Date
   recordedAt     DateTime           @default(now())
@@ -1803,4 +1847,85 @@ enum ThemePreference {
 enum TextSizePreference {
   NORMAL
   LARGE
+}
+
+/// Tipo de registo clínico a que uma adenda se refere.
+enum ClinicalRecordType {
+  ENCOUNTER
+  CONSULTATION
+  DIAGNOSIS
+  VITAL_SIGN
+  ALLERGY
+  PRESCRIPTION
+  DIAGNOSTIC_ORDER
+  DIAGNOSTIC_RESULT
+  PROCEDURE
+  TREATMENT
+  ADMISSION
+  ATTACHMENT
+}
+
+/// Natureza da adenda: acrescento, correcção, anulação ou comentário.
+enum ClinicalAddendumKind {
+  ADENDA
+  CORRECCAO
+  ANULACAO
+  COMENTARIO
+}
+
+/// Adenda a um registo clínico.
+///
+/// Um registo clínico nunca é alterado nem apagado (a base de dados impede-o
+/// por gatilho). Quando é preciso corrigir, esclarecer ou anular, acrescenta-se
+/// uma adenda ligada ao registo original — e, se for caso disso, um registo novo
+/// apontado em `replacementId`. Esta tabela é também append-only.
+model ClinicalAddendum {
+  id            String               @id @default(cuid())
+  clinicId      String
+  clinic        Clinic               @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  patientId     String
+  patient       Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  targetType    ClinicalRecordType
+  targetId      String
+  kind          ClinicalAddendumKind @default(ADENDA)
+  body          String
+  /// Registo novo que substitui o original (quando a adenda o anula/corrige).
+  replacementId String?
+  encounterId   String?
+  encounter     Encounter?           @relation(fields: [encounterId], references: [id])
+  doctorId      String?
+  doctor        Doctor?              @relation(fields: [doctorId], references: [id])
+  authorId      String?
+  author        User?                @relation("AddendumAuthor", fields: [authorId], references: [id])
+  createdAt     DateTime             @default(now())
+
+  @@index([clinicId, targetType, targetId])
+  @@index([clinicId, patientId, createdAt])
+  @@index([encounterId])
+}
+
+/// Catálogo CID-11 (OMS) em cache local.
+///
+/// Alimentado pela API da OMS (nuvem ou instalação local) à medida que os
+/// códigos são usados, ou por importação do ficheiro oficial. Nenhum código é
+/// escrito à mão: o prontuário guarda o título tal como veio da classificação,
+/// e a cache mantém a pesquisa a funcionar sem internet.
+model IcdCode {
+  id            String   @id @default(cuid())
+  release       String
+  linearization String   @default("mms")
+  language      String   @default("pt")
+  code          String
+  title         String
+  uri           String?
+  chapter       String?
+  /// Título normalizado (minúsculas, sem acentos) para pesquisa local.
+  searchText    String
+  usageCount    Int      @default(0)
+  syncedAt      DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@unique([release, linearization, language, code])
+  @@index([searchText])
+  @@index([code])
 }

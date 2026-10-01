@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Banknote, CheckCircle2, ExternalLink } from "lucide-react";
+import { Banknote, CheckCircle2, ExternalLink, FileText } from "lucide-react";
 import { ProcessingPulse } from "@/components/processing-pulse";
 import { registerInvoicePayment, type PaymentValues } from "@/server/billing-actions";
 import { useToast } from "@/components/toast";
@@ -85,7 +85,10 @@ export function InvoicePaymentButton({ invoiceId, invoiceNumber, patientOutstand
             <div className="space-y-4 text-center">
               <CheckCircle2 className="mx-auto size-10 text-success" />
               <div><p className="text-sm text-muted-foreground">{t("finance.payment.receiptIssued")}</p><p className="font-mono text-lg font-semibold">{receipt.number}</p></div>
-              <Link href={`/financeiro/recibos/${receipt.id}`} target="_blank" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">{t("finance.payment.openReceipt")} <ExternalLink className="size-4" /></Link>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <Link href={`/financeiro/faturas/${invoiceId}`} target="_blank" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"><FileText className="size-4" /> {t("finance.payment.openInvoice")}</Link>
+                <Link href={`/financeiro/recibos/${receipt.id}`} target="_blank" className="inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline">{t("finance.payment.openReceipt")} <ExternalLink className="size-4" /></Link>
+              </div>
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">

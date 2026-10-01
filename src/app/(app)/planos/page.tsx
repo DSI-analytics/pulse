@@ -19,6 +19,10 @@ export async function generateMetadata() {
 export default async function PlanosPage({ searchParams }: { searchParams: Promise<{ q?: string; seguradora?: string; estado?: string }> }) {
   const user = await requirePermission("healthplan.view");
   const [t, f] = await Promise.all([getTranslator(), getFormatters()]);
+  const copayModeOptions = [
+    { value: "FIXED", label: t("plans.copayModes.FIXED") },
+    { value: "PERCENTAGE", label: t("plans.copayModes.PERCENTAGE") },
+  ];
   const sp = await searchParams;
   const query = (sp.q ?? "").trim();
   const isActive = sp.estado === "ativo" ? true : sp.estado === "inativo" ? false : undefined;
@@ -83,7 +87,9 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
                 { name: "insuranceCompanyId", label: t("plans.fields.insurer"), type: "select", required: true, full: true, options: insurers.map((i) => ({ value: i.id, label: i.name })) },
                 { name: "name", label: t("plans.fields.name"), required: true, placeholder: t("plans.fields.namePlaceholder") },
                 { name: "contractPrice", label: t("plans.fields.contractPrice"), type: "money", required: true, suffix: f.currency, placeholder: "2000" },
-                { name: "patientCopay", label: t("plans.fields.copay"), type: "money", suffix: f.currency, placeholder: "200" },
+                { name: "patientCopayMode", label: t("plans.fields.copayMode"), type: "select", required: true, defaultValue: "FIXED", options: copayModeOptions },
+                { name: "patientCopay", label: t("plans.fields.copayFixed"), type: "money", required: true, suffix: f.currency, placeholder: "200", visibleWhen: { field: "patientCopayMode", value: "FIXED" } },
+                { name: "patientCopayPercentage", label: t("plans.fields.copayPercentage"), type: "number", required: true, suffix: "%", placeholder: "10", visibleWhen: { field: "patientCopayMode", value: "PERCENTAGE" } },
               ]}
             />
           ) : undefined
@@ -117,6 +123,11 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
                   <TableCell>
                     <p className="font-medium">{p.insuranceCompany.name}</p>
                     <p className="text-[12px] text-muted-foreground">{t("plans.contractLine", { plan: p.name, price: f.money(p.contractPrice) })}</p>
+                    <p className="text-[12px] font-medium text-foreground">
+                      {p.patientCopayMode === "PERCENTAGE"
+                        ? t("plans.participationPercentage", { percentage: f.number(p.patientCopayPercentBps / 100, 2) })
+                        : t("plans.participationFixed", { amount: f.money(p.patientCopay) })}
+                    </p>
                   </TableCell>
                   <TableCell className="text-right tabular">{consultas}</TableCell>
                   <TableCell className="text-right tabular">{f.money(billed)}</TableCell>
@@ -134,7 +145,9 @@ export default async function PlanosPage({ searchParams }: { searchParams: Promi
                           { name: "insuranceCompanyId", label: t("plans.fields.insurer"), type: "select", required: true, defaultValue: p.insuranceCompanyId, options: insurers.map((i) => ({ value: i.id, label: i.name })) },
                           { name: "name", label: t("plans.fields.name"), required: true, defaultValue: p.name },
                           { name: "contractPrice", label: t("plans.fields.contractPrice"), type: "money", required: true, defaultValue: String(p.contractPrice), suffix: f.currency },
-                          { name: "patientCopay", label: t("plans.fields.copay"), type: "money", defaultValue: String(p.patientCopay), suffix: f.currency },
+                          { name: "patientCopayMode", label: t("plans.fields.copayMode"), type: "select", required: true, defaultValue: p.patientCopayMode, options: copayModeOptions },
+                          { name: "patientCopay", label: t("plans.fields.copayFixed"), type: "money", required: true, defaultValue: String(p.patientCopay), suffix: f.currency, visibleWhen: { field: "patientCopayMode", value: "FIXED" } },
+                          { name: "patientCopayPercentage", label: t("plans.fields.copayPercentage"), type: "number", required: true, defaultValue: String(p.patientCopayPercentBps / 100), suffix: "%", visibleWhen: { field: "patientCopayMode", value: "PERCENTAGE" } },
                         ]}
                         updateAction={updateHealthPlanRecord}
                         deleteAction={deleteHealthPlanRecord}

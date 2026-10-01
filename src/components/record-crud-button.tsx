@@ -22,6 +22,7 @@ export interface CrudField {
   defaultValue?: string;
   full?: boolean;
   suffix?: string;
+  visibleWhen?: { field: string; value: string };
 }
 
 export type CrudActionResult = { ok: true; id?: string } | { error: string };
@@ -64,7 +65,7 @@ export function RecordCrudButton({
 
   async function submit() {
     setError(null);
-    for (const f of fields) {
+    for (const f of fields.filter((field) => !field.visibleWhen || values[field.visibleWhen.field] === field.visibleWhen.value)) {
       if (f.required && !values[f.name]?.trim()) {
         return setError(t("common.requiredField", { field: f.label }));
       }
@@ -125,7 +126,7 @@ export function RecordCrudButton({
           }
         >
           <div className="grid grid-cols-2 gap-3">
-            {fields.map((f) => (
+            {fields.filter((f) => !f.visibleWhen || values[f.visibleWhen.field] === f.visibleWhen.value).map((f) => (
               <div key={f.name} className={f.full ? "col-span-2" : ""}>
                 <Label htmlFor={f.name}>
                   {f.label}

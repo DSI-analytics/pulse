@@ -21,6 +21,7 @@ export interface Field {
   defaultValue?: string;
   full?: boolean; // span both columns
   suffix?: string;
+  visibleWhen?: { field: string; value: string };
 }
 
 type ActionResult = { ok: true; id?: string } | { error: string };
@@ -59,7 +60,7 @@ export function CadastroButton({
 
   async function submit() {
     setError(null);
-    for (const f of fields) {
+    for (const f of fields.filter((field) => !field.visibleWhen || values[field.visibleWhen.field] === field.visibleWhen.value)) {
       if (f.required && !values[f.name]?.trim()) {
         return setError(t("common.requiredField", { field: f.label }));
       }
@@ -95,7 +96,7 @@ export function CadastroButton({
           }
         >
           <div className="grid grid-cols-2 gap-3">
-            {fields.map((f) => (
+            {fields.filter((f) => !f.visibleWhen || values[f.visibleWhen.field] === f.visibleWhen.value).map((f) => (
               <div key={f.name} className={f.full ? "col-span-2" : ""}>
                 <Label htmlFor={f.name}>
                   {f.label}

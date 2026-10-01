@@ -277,22 +277,37 @@ export async function updateScheduleSettings(_previous: SettingsActionState, for
     lowStockLeadDays: days,
     expiryWarningDays: days,
     receivableOverdueDays: days,
+    bookingLeadValue: z.coerce.number().int().min(0).max(43_200),
+    bookingLeadUnit: z.enum(["minutes", "hours", "days"]),
   });
   const parsed = schema.safeParse({
     defaultSlotMinutes: text(formData, "defaultSlotMinutes"),
     lowStockLeadDays: text(formData, "lowStockLeadDays"),
     expiryWarningDays: text(formData, "expiryWarningDays"),
     receivableOverdueDays: text(formData, "receivableOverdueDays"),
+    bookingLeadValue: text(formData, "bookingLeadValue"),
+    bookingLeadUnit: text(formData, "bookingLeadUnit"),
   });
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0].message };
+
+  const leadFactor = parsed.data.bookingLeadUnit === "days" ? 1440 : parsed.data.bookingLeadUnit === "hours" ? 60 : 1;
+  const minBookingLeadMinutes = parsed.data.bookingLeadValue * leadFactor;
+  if (minBookingLeadMinutes > 43_200) return { ok: false, message: t("settings.schedule.errors.bookingLead") };
 
   const fee = parseMoneyInput(text(formData, "defaultConsultationFee"));
   if (fee === null || fee < 0 || fee > 100_000_000_00) return { ok: false, message: t("settings.schedule.errors.fee") };
 
-  const data = { ...parsed.data, defaultConsultationFee: fee };
+  const data = {
+    defaultSlotMinutes: parsed.data.defaultSlotMinutes,
+    lowStockLeadDays: parsed.data.lowStockLeadDays,
+    expiryWarningDays: parsed.data.expiryWarningDays,
+    receivableOverdueDays: parsed.data.receivableOverdueDays,
+    minBookingLeadMinutes,
+    defaultConsultationFee: fee,
+  };
   const before = await prisma.clinicSettings.findUnique({
     where: { clinicId: user.clinicId },
-    select: { defaultSlotMinutes: true, defaultConsultationFee: true, lowStockLeadDays: true, expiryWarningDays: true, receivableOverdueDays: true },
+    select: { defaultSlotMinutes: true, defaultConsultationFee: true, minBookingLeadMinutes: true, lowStockLeadDays: true, expiryWarningDays: true, receivableOverdueDays: true },
   });
   await prisma.clinicSettings.upsert({
     where: { clinicId: user.clinicId },

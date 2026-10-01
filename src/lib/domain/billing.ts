@@ -5,6 +5,13 @@ export interface BillingSplit {
   insurerDue: number;
 }
 
+export function calculateInvoiceTotal(baseTotal: number, additionalItems: readonly { total: number }[]): number {
+  return Math.max(0, Math.round(baseTotal))
+    + additionalItems.reduce((sum, item) => sum + Math.max(0, Math.round(item.total)), 0);
+}
+
+export type CopayMode = "FIXED" | "PERCENTAGE";
+
 export interface BillingReconciliation {
   patientPaid: number;
   insurerPaid: number;
@@ -16,10 +23,18 @@ export interface BillingReconciliation {
   revenueStatus: PaymentStatus;
 }
 
-export function splitInvoice(total: number, insured: boolean, copay: number): BillingSplit {
+export function splitInvoice(
+  total: number,
+  insured: boolean,
+  copay: number,
+  mode: CopayMode = "FIXED",
+  percentageBps = 0,
+): BillingSplit {
   const safeTotal = Math.max(0, Math.round(total));
   if (!insured) return { patientDue: safeTotal, insurerDue: 0 };
-  const patientDue = Math.min(safeTotal, Math.max(0, Math.round(copay)));
+  const patientDue = mode === "PERCENTAGE"
+    ? Math.round(safeTotal * Math.min(10_000, Math.max(0, Math.round(percentageBps))) / 10_000)
+    : Math.min(safeTotal, Math.max(0, Math.round(copay)));
   return { patientDue, insurerDue: safeTotal - patientDue };
 }
 

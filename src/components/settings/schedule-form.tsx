@@ -6,6 +6,7 @@ import { ProcessingPulse } from "@/components/processing-pulse";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { FormStatus, SettingRow } from "@/components/settings/form-status";
 import { useFormat, useLocale, useT } from "@/i18n/client";
 import { updateScheduleSettings, type SettingsActionState } from "@/server/settings-actions";
@@ -13,9 +14,53 @@ import { updateScheduleSettings, type SettingsActionState } from "@/server/setti
 interface ScheduleValues {
   defaultSlotMinutes: number;
   defaultConsultationFee: number;
+  minBookingLeadMinutes: number;
   lowStockLeadDays: number;
   expiryWarningDays: number;
   receivableOverdueDays: number;
+}
+
+type LeadUnit = "minutes" | "hours" | "days";
+
+function initialLeadTime(totalMinutes: number): { amount: string; unit: LeadUnit } {
+  if (totalMinutes > 0 && totalMinutes % 1440 === 0) return { amount: String(totalMinutes / 1440), unit: "days" };
+  if (totalMinutes > 0 && totalMinutes % 60 === 0) return { amount: String(totalMinutes / 60), unit: "hours" };
+  return { amount: String(totalMinutes), unit: "minutes" };
+}
+
+function LeadTimeInput({ totalMinutes }: { totalMinutes: number }) {
+  const t = useT();
+  const initial = initialLeadTime(totalMinutes);
+  const [amount, setAmount] = React.useState(initial.amount);
+  const [unit, setUnit] = React.useState<LeadUnit>(initial.unit);
+
+  return (
+    <div className="flex w-full gap-2 sm:w-64">
+      <Input
+        id="booking-lead-value"
+        name="bookingLeadValue"
+        type="number"
+        min={0}
+        max={unit === "days" ? 30 : unit === "hours" ? 720 : 43200}
+        step={1}
+        required
+        value={amount}
+        onChange={(event) => setAmount(event.target.value)}
+        className="min-w-0 flex-1 text-right tabular"
+      />
+      <Select
+        name="bookingLeadUnit"
+        value={unit}
+        onChange={(event) => setUnit(event.target.value as LeadUnit)}
+        aria-label={t("settings.schedule.bookingLeadUnit")}
+        className="w-28 bg-surface"
+      >
+        <option value="minutes">{t("settings.schedule.minutesLong")}</option>
+        <option value="hours">{t("settings.schedule.hours")}</option>
+        <option value="days">{t("settings.schedule.days")}</option>
+      </Select>
+    </div>
+  );
 }
 
 /** Campo numérico com unidade à direita ("min", "dias", "MZN"). */
@@ -53,6 +98,9 @@ export function ScheduleForm({ values }: { values: ScheduleValues }) {
             <SettingRow label={t("settings.schedule.slotMinutes")} hint={t("settings.schedule.slotMinutesHint")} htmlFor="slot-minutes">
               <UnitInput id="slot-minutes" name="defaultSlotMinutes" type="number" min={5} max={240} step={5} required
                 defaultValue={values.defaultSlotMinutes} unit={t("settings.schedule.minutes")} />
+            </SettingRow>
+            <SettingRow label={t("settings.schedule.bookingLead")} hint={t("settings.schedule.bookingLeadHint")} htmlFor="booking-lead-value">
+              <LeadTimeInput totalMinutes={values.minBookingLeadMinutes} />
             </SettingRow>
             <SettingRow label={t("settings.schedule.consultationFee")} hint={t("settings.schedule.consultationFeeHint")} htmlFor="consultation-fee">
               <UnitInput id="consultation-fee" name="defaultConsultationFee" inputMode="decimal" required

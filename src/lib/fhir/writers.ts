@@ -1,9 +1,10 @@
 import "server-only";
+import type { ClinicalRecordType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { normaliseSubstance } from "@/lib/domain/allergy-check";
 import { computeBmi } from "@/lib/domain/vitals";
 import { withNumberRetry } from "@/lib/sequences";
-import { attachExternalIdentifier, bumpVersion, ensureFhirId, resolveFhirId, type FhirResourceType } from "./ids";
+import { attachExternalIdentifier, bumpVersion, ensureFhirId, INTERNAL_MODEL, resolveFhirId, type FhirIdentity, type FhirResourceType } from "./ids";
 import type { OperationIssue } from "./outcome";
 import type { AllergyInput, ConditionInput, ObservationInput, PatientInput } from "./validation";
 
@@ -36,6 +37,49 @@ async function patientIdFromRef(clinicId: string, fhirId: string): Promise<strin
   if (!resolved) return null;
   const exists = await prisma.patient.findFirst({ where: { id: resolved.internalId, clinicId }, select: { id: true } });
   return exists?.id ?? null;
+}
+
+/**
+ * Substituição de um registo clínico imutável.
+ *
+ * O PUT do FHIR não reescreve alergias, diagnósticos nem observações: cria um
+ * registo novo, liga-o ao antigo por uma adenda de correcção (`CORRECCAO`, com
+ * `replacementId`) e passa a identidade FHIR (mesmo `id`, nova versão) a
+ * apontar para o registo novo. O original fica intacto no prontuário.
+ */
+async function supersede(
+  clinicId: string,
+  patientId: string,
+  targetType: ClinicalRecordType,
+  resourceType: FhirResourceType,
+  previousId: string,
+  replacementId: string,
+  encounterId: string | null,
+): Promise<FhirIdentity> {
+  await prisma.clinicalAddendum.create({
+    data: {
+      clinicId,
+      patientId,
+      targetType,
+      targetId: previousId,
+      kind: "CORRECCAO",
+      body: `Registo substituído por escrita FHIR (${resourceType}). O registo original mantém-se no prontuário.`,
+      replacementId,
+      encounterId,
+    },
+  });
+
+  const internalModel = INTERNAL_MODEL[resourceType];
+  try {
+    return await prisma.fhirResource.update({
+      where: { internalModel_internalId: { internalModel, internalId: previousId } },
+      data: { internalId: replacementId, versionId: { increment: 1 }, lastUpdated: new Date() },
+      select: { fhirId: true, versionId: true, lastUpdated: true },
+    });
+  } catch {
+    // Sem identidade anterior (caso improvável): emite-se uma nova.
+    return ensureFhirId(clinicId, resourceType, replacementId);
+  }
 }
 
 async function encounterIdFromRef(clinicId: string, patientId: string, fhirId: string | null): Promise<string | null | "invalid"> {
@@ -114,11 +158,13 @@ export async function writeAllergy(
   };
 
   if (existingInternalId) {
-    const existing = await prisma.allergy.findFirst({ where: { id: existingInternalId, clinicId }, select: { id: true } });
+    const existing = await prisma.allergy.findFirst({ where: { id: existingInternalId, clinicId }, select: { id: true, patientId: true } });
     if (!existing) return fail(404, "not-found", "Alergia não encontrada.");
-    await prisma.allergy.update({ where: { id: existing.id }, data });
-    const identity = await bumpVersion("AllergyIntolerance", existing.id);
-    return { ok: true, internalId: existing.id, fhirId: identity!.fhirId, versionId: identity!.versionId, created: false };
+    if (existing.patientId !== patientId) return fail(422, "invalid", "`patient` não pode ser alterado numa actualização.");
+
+    const replacement = await prisma.allergy.create({ data: { clinicId, patientId, ...data }, select: { id: true } });
+    const identity = await supersede(clinicId, patientId, "ALLERGY", "AllergyIntolerance", existing.id, replacement.id, null);
+    return { ok: true, internalId: replacement.id, fhirId: identity.fhirId, versionId: identity.versionId, created: false };
   }
 
   const created = await prisma.allergy.create({ data: { clinicId, patientId, ...data }, select: { id: true } });
@@ -150,11 +196,13 @@ export async function writeCondition(
   };
 
   if (existingInternalId) {
-    const existing = await prisma.diagnosis.findFirst({ where: { id: existingInternalId, clinicId }, select: { id: true } });
+    const existing = await prisma.diagnosis.findFirst({ where: { id: existingInternalId, clinicId }, select: { id: true, patientId: true } });
     if (!existing) return fail(404, "not-found", "Diagnóstico não encontrado.");
-    await prisma.diagnosis.update({ where: { id: existing.id }, data });
-    const identity = await bumpVersion("Condition", existing.id);
-    return { ok: true, internalId: existing.id, fhirId: identity!.fhirId, versionId: identity!.versionId, created: false };
+    if (existing.patientId !== patientId) return fail(422, "invalid", "`subject` não pode ser alterado numa actualização.");
+
+    const replacement = await prisma.diagnosis.create({ data: { clinicId, patientId, ...data }, select: { id: true } });
+    const identity = await supersede(clinicId, patientId, "DIAGNOSIS", "Condition", existing.id, replacement.id, encounterId);
+    return { ok: true, internalId: replacement.id, fhirId: identity.fhirId, versionId: identity.versionId, created: false };
   }
 
   const created = await prisma.diagnosis.create({ data: { clinicId, patientId, ...data }, select: { id: true } });
@@ -196,11 +244,13 @@ export async function writeObservation(
   };
 
   if (existingInternalId) {
-    const existing = await prisma.vitalSign.findFirst({ where: { id: existingInternalId, clinicId }, select: { id: true } });
+    const existing = await prisma.vitalSign.findFirst({ where: { id: existingInternalId, clinicId }, select: { id: true, patientId: true } });
     if (!existing) return fail(404, "not-found", "Observação não encontrada.");
-    await prisma.vitalSign.update({ where: { id: existing.id }, data });
-    const identity = await bumpVersion("Observation", existing.id);
-    return { ok: true, internalId: existing.id, fhirId: identity!.fhirId, versionId: identity!.versionId, created: false };
+    if (existing.patientId !== patientId) return fail(422, "invalid", "`subject` não pode ser alterado numa actualização.");
+
+    const replacement = await prisma.vitalSign.create({ data: { clinicId, patientId, ...data }, select: { id: true } });
+    const identity = await supersede(clinicId, patientId, "VITAL_SIGN", "Observation", existing.id, replacement.id, encounterId);
+    return { ok: true, internalId: replacement.id, fhirId: identity.fhirId, versionId: identity.versionId, created: false };
   }
 
   const created = await prisma.vitalSign.create({ data: { clinicId, patientId, ...data }, select: { id: true } });

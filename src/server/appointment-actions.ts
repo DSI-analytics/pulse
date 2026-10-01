@@ -46,16 +46,18 @@ export async function setAppointmentStatus(id: string, status: AppointmentStatus
     });
 
     if (status === "EM_CONSULTA") {
-      await tx.consultation.upsert({
-        where: { appointmentId: appt.id },
-        create: {
+      // O registo clínico é imutável. Se já existir (por exemplo, após um
+      // segundo clique ou uma retoma), preservamo-lo em vez de executar o ramo
+      // UPDATE de um upsert e reescrever `startedAt`.
+      await tx.consultation.createMany({
+        data: [{
           clinicId: user.clinicId,
           appointmentId: appt.id,
           patientId: appt.patientId,
           doctorId: appt.doctorId,
           startedAt: new Date(),
-        },
-        update: { startedAt: new Date() },
+        }],
+        skipDuplicates: true,
       });
     }
   });

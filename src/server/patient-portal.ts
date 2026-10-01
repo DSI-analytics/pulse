@@ -7,9 +7,11 @@ import { z } from "zod";
 import { audit } from "@/lib/audit";
 import { CLINIC_TZ } from "@/lib/datetime";
 import { generateDaySlots, type WeeklyRule } from "@/lib/domain/availability";
+import { minimumBookableAt } from "@/lib/domain/booking-policy";
 import { formatMZNExact } from "@/lib/money";
 import type { PatientPortalContext } from "@/lib/patient-portal-auth";
 import { prisma } from "@/lib/prisma";
+import { getMinimumBookingLeadMinutes } from "@/server/booking-policy";
 
 const ACTIVE_APPOINTMENT_STATUSES = ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA", "EM_CONSULTA"] as const;
 
@@ -146,7 +148,7 @@ export async function getPatientDashboard(context: PatientPortalContext) {
 }
 
 export async function getPatientBookingContext(context: PatientPortalContext) {
-  const [specialties, doctors, services, planLinks] = await Promise.all([
+  const [specialties, doctors, services, planLinks, minBookingLeadMinutes] = await Promise.all([
     prisma.specialty.findMany({ where: { clinicId: context.clinicId, doctors: { some: { status: "ACTIVO" } } }, orderBy: { name: "asc" }, select: { id: true, name: true, color: true } }),
     prisma.doctor.findMany({ where: { clinicId: context.clinicId, status: "ACTIVO" }, orderBy: { name: "asc" }, select: { id: true, name: true, specialtyId: true, consultationPrice: true, consultationDuration: true, acceptedPlans: { select: { healthPlanId: true } } } }),
     prisma.service.findMany({ where: { clinicId: context.clinicId, isActive: true, source: { in: ["EXAME", "PROCEDIMENTO"] } }, orderBy: [{ category: "asc" }, { name: "asc" }], select: { id: true, name: true, category: true, source: true, basePrice: true } }),
@@ -154,12 +156,14 @@ export async function getPatientBookingContext(context: PatientPortalContext) {
       where: { patientId: context.patientId, clinicId: context.clinicId, healthPlan: { isActive: true }, OR: [{ validUntil: null }, { validUntil: { gte: new Date() } }] },
       select: { id: true, healthPlanId: true, membershipNumber: true, healthPlan: { select: { name: true, contractPrice: true, insuranceCompany: { select: { name: true } } } } },
     }),
+    getMinimumBookingLeadMinutes(context.clinicId),
   ]);
   return {
     specialties,
     doctors: doctors.map(({ acceptedPlans, ...doctor }) => ({ ...doctor, acceptedPlanIds: acceptedPlans.map((plan) => plan.healthPlanId) })),
     services,
     plans: planLinks.map((link) => ({ id: link.id, healthPlanId: link.healthPlanId, name: link.healthPlan.name, insurer: link.healthPlan.insuranceCompany.name, membershipNumber: link.membershipNumber, contractPrice: link.healthPlan.contractPrice })),
+    minBookingLeadMinutes,
   };
 }
 
@@ -169,14 +173,17 @@ export async function getPatientDoctorAvailability(context: PatientPortalContext
   if (Number.isNaN(target.getTime())) return { error: "Data inválida." };
   if (date < formatInTimeZone(new Date(), CLINIC_TZ, "yyyy-MM-dd")) return { error: "Não é possível marcar numa data passada." };
 
-  const doctor = await prisma.doctor.findFirst({
-    where: { id: doctorId, clinicId: context.clinicId, status: "ACTIVO" },
-    select: {
-      id: true,
-      schedules: { select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true } },
-      availabilityExceptions: { where: { date: target }, select: { type: true, startTime: true, endTime: true } },
-    },
-  });
+  const [doctor, minBookingLeadMinutes] = await Promise.all([
+    prisma.doctor.findFirst({
+      where: { id: doctorId, clinicId: context.clinicId, status: "ACTIVO" },
+      select: {
+        id: true,
+        schedules: { select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true } },
+        availabilityExceptions: { where: { date: target }, select: { type: true, startTime: true, endTime: true } },
+      },
+    }),
+    getMinimumBookingLeadMinutes(context.clinicId),
+  ]);
   if (!doctor) return { error: "Médico não encontrado." };
 
   const rule = doctor.schedules.find((item) => item.weekday === toZonedTime(target, CLINIC_TZ).getDay()) as WeeklyRule | undefined;
@@ -191,7 +198,7 @@ export async function getPatientDoctorAvailability(context: PatientPortalContext
     doctor.availabilityExceptions.map((item) => ({ type: item.type, startTime: item.startTime, endTime: item.endTime })),
     busy.map((item) => ({ start: item.startAt, end: item.endAt })),
     CLINIC_TZ,
-  ).filter((slot) => !slot.taken && slot.start.getTime() > Date.now() + 2 * 60_000)
+  ).filter((slot) => !slot.taken && slot.start >= minimumBookableAt(new Date(), minBookingLeadMinutes))
     .map((slot) => ({ start: slot.start.toISOString(), label: formatInTimeZone(slot.start, CLINIC_TZ, "HH:mm") }));
   return { slots };
 }

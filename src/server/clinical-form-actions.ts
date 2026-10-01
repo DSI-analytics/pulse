@@ -51,11 +51,15 @@ export async function addDiagnosisForPatient(patientId: string, values: Values):
   return unwrap(
     await addDiagnosis({
       patientId,
-      description: values.description ?? "",
+      // O diagnóstico é escolhido na CID-11: o formulário envia o código, e o
+      // título oficial é resolvido no servidor contra o catálogo da OMS.
+      code: values.code ?? "",
+      codeSystem: values.codeSystem || "ICD-11",
+      codeUri: values.codeUri ?? "",
+      codeRelease: values.codeRelease ?? "",
+      title: values.title ?? values.description ?? "",
       kind: (values.kind || "PRINCIPAL") as "PRINCIPAL",
       certainty: (values.certainty || "PROVISORIO") as "PROVISORIO",
-      code: values.code ?? "",
-      codeSystem: values.code ? (values.codeSystem || "ICD-10") : "",
       onsetDate: values.onsetDate ?? "",
       notes: values.notes ?? "",
       encounterId: values.encounterId ?? "",

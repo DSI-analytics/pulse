@@ -74,7 +74,8 @@ jobs:
             tar -xzf /tmp/pulso-${GITHUB_SHA}.tgz -C \$release
             cd \$release
 
-            docker compose -p pulso --env-file /opt/pulso/.env up -d db
+            docker compose -p pulso --env-file /opt/pulso/.env pull icd11
+            docker compose -p pulso --env-file /opt/pulso/.env up -d db icd11
             docker compose -p pulso --env-file /opt/pulso/.env build app
 
             docker compose -p pulso --env-file /opt/pulso/.env run --rm app \

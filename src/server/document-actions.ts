@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { can } from "@/lib/rbac";
 import { removeStoredFile, storeUpload } from "@/lib/documents";
+import { isImmutabilityError } from "@/lib/domain/clinical-immutability";
 import { getTranslator } from "@/i18n/server";
 
 export type DocumentActionResult = { ok: true; id: string } | { error: string };
@@ -115,19 +116,52 @@ export async function uploadClinicalDocument(formData: FormData): Promise<Docume
   }
 }
 
-/** Soft delete: sai da vista clínica, o rasto de auditoria permanece. */
+/**
+ * Retirada de um documento da vista clínica.
+ *
+ * Não é uma eliminação: o ficheiro e o registo permanecem (só `deletedAt` pode
+ * mudar) e a retirada exige um motivo, que fica como adenda de anulação
+ * associada ao anexo — o prontuário conta sempre o que aconteceu.
+ */
 export async function removeClinicalDocument(id: string, reason: string): Promise<DocumentActionResult> {
   const user = await requireUser();
   const t = await getTranslator();
   if (!can(user.role, "document.manage")) return { error: t("clinical.documents.noPermissionRemove") };
 
+  const motive = (reason ?? "").trim().slice(0, 4000);
+  if (motive.length < 3) return { error: t("clinical.documents.removeReason") };
+
   const existing = await prisma.clinicalAttachment.findFirst({
     where: { id, clinicId: user.clinicId, deletedAt: null },
-    select: { id: true, patientId: true, name: true, category: true },
+    select: { id: true, patientId: true, name: true, category: true, encounterId: true },
   });
   if (!existing) return { error: t("clinical.documents.notFound") };
 
-  await prisma.clinicalAttachment.update({ where: { id: existing.id }, data: { deletedAt: new Date() } });
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.clinicalAttachment.update({ where: { id: existing.id }, data: { deletedAt: new Date() } });
+      // Um anexo sem paciente (raro, legado) não pode gerar adenda: a adenda
+      // pertence sempre ao prontuário de alguém.
+      if (existing.patientId) {
+        await tx.clinicalAddendum.create({
+          data: {
+            clinicId: user.clinicId,
+            patientId: existing.patientId,
+            targetType: "ATTACHMENT",
+            targetId: existing.id,
+            kind: "ANULACAO",
+            body: motive,
+            encounterId: existing.encounterId,
+            authorId: user.userId,
+          },
+        });
+      }
+    });
+  } catch (error) {
+    if (isImmutabilityError(error)) return { error: t("clinical.immutable.blocked") };
+    throw error;
+  }
+
   await auditAs(
     { userId: user.userId, clinicId: user.clinicId, name: user.name, role: user.role, sessionId: user.sessionId ?? null },
     {
@@ -136,7 +170,7 @@ export async function removeClinicalDocument(id: string, reason: string): Promis
       entityId: existing.id,
       before: { deletedAt: null, name: existing.name },
       after: { deletedAt: new Date().toISOString() },
-      metadata: { reason: reason.slice(0, 500), patientId: existing.patientId },
+      metadata: { reason: motive.slice(0, 500), patientId: existing.patientId },
     },
   );
 

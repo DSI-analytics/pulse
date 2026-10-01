@@ -8,8 +8,10 @@ import { requireUser } from "@/lib/auth";
 import { can } from "@/lib/rbac";
 import { audit } from "@/lib/audit";
 import { generateDaySlots, hasConflict, type WeeklyRule } from "@/lib/domain/availability";
+import { isStartBookable, minimumBookableAt } from "@/lib/domain/booking-policy";
 import { CLINIC_TZ } from "@/lib/datetime";
 import { getTranslator } from "@/i18n/server";
+import { getMinimumBookingLeadMinutes } from "@/server/booking-policy";
 
 export interface BookingContext {
   specialties: { id: string; name: string; color: string }[];
@@ -20,13 +22,22 @@ export interface BookingContext {
     consultationPrice: number;
     consultationDuration: number;
   }[];
-  plans: { id: string; name: string; insurer: string; contractPrice: number }[];
+  plans: {
+    id: string;
+    name: string;
+    insurer: string;
+    contractPrice: number;
+    patientCopay: number;
+    patientCopayMode: "FIXED" | "PERCENTAGE";
+    patientCopayPercentBps: number;
+  }[];
   services: { id: string; name: string; category: string; basePrice: number }[];
+  minBookingLeadMinutes: number;
 }
 
 export async function getBookingContext(): Promise<BookingContext> {
   const user = await requireUser();
-  const [specialties, doctors, plans, services] = await Promise.all([
+  const [specialties, doctors, plans, services, minBookingLeadMinutes] = await Promise.all([
     prisma.specialty.findMany({
       where: { clinicId: user.clinicId },
       orderBy: { name: "asc" },
@@ -46,24 +57,29 @@ export async function getBookingContext(): Promise<BookingContext> {
     prisma.healthPlan.findMany({
       where: { clinicId: user.clinicId, isActive: true },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, contractPrice: true, insuranceCompany: { select: { name: true } } },
+      select: { id: true, name: true, contractPrice: true, patientCopay: true, patientCopayMode: true, patientCopayPercentBps: true, insuranceCompany: { select: { name: true } } },
     }),
     prisma.service.findMany({
       where: { clinicId: user.clinicId, isActive: true, source: { in: ["EXAME", "PROCEDIMENTO", "OUTRO"] } },
       orderBy: [{ category: "asc" }, { name: "asc" }],
       select: { id: true, name: true, category: true, basePrice: true },
     }),
+    getMinimumBookingLeadMinutes(user.clinicId),
   ]);
 
   return {
     specialties,
     doctors,
     services,
+    minBookingLeadMinutes,
     plans: plans.map((p) => ({
       id: p.id,
       name: p.name,
       insurer: p.insuranceCompany.name,
       contractPrice: p.contractPrice,
+      patientCopay: p.patientCopay,
+      patientCopayMode: p.patientCopayMode,
+      patientCopayPercentBps: p.patientCopayPercentBps,
     })),
   };
 }
@@ -138,22 +154,25 @@ export async function getDoctorAvailability(
   const user = await requireUser();
   const t = await getTranslator();
 
-  const doctor = await prisma.doctor.findFirst({
-    where: { id: doctorId, clinicId: user.clinicId },
-    select: {
-      id: true,
-      consultationDuration: true,
-      schedules: {
-        select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true },
-      },
-      availabilityExceptions: {
-        where: {
-          date: new Date(date),
+  const [doctor, minBookingLeadMinutes] = await Promise.all([
+    prisma.doctor.findFirst({
+      where: { id: doctorId, clinicId: user.clinicId },
+      select: {
+        id: true,
+        consultationDuration: true,
+        schedules: {
+          select: { weekday: true, startTime: true, endTime: true, breakStart: true, breakEnd: true, slotMinutes: true },
         },
-        select: { type: true, startTime: true, endTime: true },
+        availabilityExceptions: {
+          where: {
+            date: new Date(date),
+          },
+          select: { type: true, startTime: true, endTime: true },
+        },
       },
-    },
-  });
+    }),
+    getMinimumBookingLeadMinutes(user.clinicId),
+  ]);
 
   if (!doctor) return { error: t("agenda.booking.errors.doctorNotFound") };
 
@@ -189,7 +208,7 @@ export async function getDoctorAvailability(
   );
 
   const slots: { start: string; label: string }[] = daySlots
-    .filter((slot) => !slot.taken)
+    .filter((slot) => !slot.taken && slot.start >= minimumBookableAt(new Date(), minBookingLeadMinutes))
     .map((slot) => ({
       start: slot.start.toISOString(),
       label: formatInTimeZone(slot.start, CLINIC_TZ, "HH:mm"),
@@ -221,9 +240,9 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
 
   const startAt = new Date(data.startAt);
   if (Number.isNaN(startAt.getTime())) return { error: t("agenda.booking.errors.invalidDateTime") };
-  // No booking in the past (allow a 2-minute grace for clock skew).
-  if (startAt.getTime() < Date.now() - 2 * 60_000) {
-    return { error: t("agenda.booking.errors.pastDate") };
+  const minBookingLeadMinutes = await getMinimumBookingLeadMinutes(user.clinicId);
+  if (!isStartBookable(startAt, new Date(), minBookingLeadMinutes)) {
+    return { error: t("agenda.booking.errors.minimumLead") };
   }
   const endAt = addMinutes(startAt, doctor.consultationDuration);
   const clinicStart = toZonedTime(startAt, CLINIC_TZ);

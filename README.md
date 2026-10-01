@@ -295,7 +295,9 @@ npm run test
   procedimento, exame, encaminhamento)
 - **Sinais vitais** com IMC calculado, limites validados e sinalização de valores
   fora do intervalo de referência
-- **Diagnósticos** com `code` + `codeSystem` (preparado para ICD-10/CID e SNOMED CT)
+- **Diagnósticos escolhidos no CID-11 da OMS** — nunca escritos à mão: o médico
+  pesquisa a classificação e o prontuário guarda código, título oficial, URI e
+  versão da classificação (ver abaixo)
 - **Alergias** estruturadas, destacadas no topo do prontuário, com verificação
   contra prescrições antes da emissão
 - **Prescrições** com histórico — uma receita antiga nunca é alterada em silêncio
@@ -305,6 +307,65 @@ npm run test
 - **Linha temporal clínica** com filtros e carregamento incremental por cursor
 - **Documentos clínicos** validados por bytes, guardados fora de `/public` e
   entregues apenas por rota autenticada e auditada
+
+### Registos clínicos permanentes
+
+Um registo clínico **não é alterado nem apagado** — nem pela aplicação, nem por
+uma consulta directa à base de dados. Para corrigir, esclarecer ou anular,
+acrescenta-se um **registo novo** ou uma **adenda** ligada ao registo original
+(`ClinicalAddendum`: adenda, correcção, anulação ou comentário), ela própria
+append-only e auditada.
+
+O PostgreSQL impõe-o por gatilho (migração `clinical_records_immutable_and_icd11`):
+
+| Tabelas | Regra |
+| --- | --- |
+| Todas as clínicas | `DELETE` rejeitado |
+| Diagnósticos, sinais vitais, procedimentos, itens de prescrição e de resultado, adendas | `UPDATE` rejeitado |
+| Episódio, consulta, prescrição, pedido e resultado de exame, alergia, tratamento, internamento, documento | só mudam colunas de **estado** (fecho, validação, suspensão, alta) e apenas enquanto o registo está aberto |
+
+Um diagnóstico refutado continua no histórico: passa a ter uma adenda de
+anulação e deixa de contar nos problemas activos.
+
+### Diagnósticos com CID-11 (OMS)
+
+A pesquisa usa a [ICD-11 API da OMS](https://icd.who.int/icdapi). Nenhum código é
+escrito à mão nem embutido no código-fonte: vem sempre da classificação. Cada
+código usado fica em cache local (`IcdCode`), o que mantém a pesquisa e a
+leitura do prontuário a funcionar sem internet.
+
+```bash
+# Nuvem da OMS (registo gratuito em https://icd.who.int/icdapi)
+ICD_API_CLIENT_ID="..."
+ICD_API_CLIENT_SECRET="..."
+
+# Ou instalação local da API da OMS (Docker/serviço), sem credenciais:
+# ICD_API_BASE_URL="http://icd11"       # entre contentores Docker
+# ICD_API_BASE_URL="http://localhost:8382" # app fora do Docker
+
+ICD_API_RELEASE="2026-01"    # versão da classificação
+ICD_API_LANGUAGE="pt"        # recua para inglês quando não houver tradução
+```
+
+No deploy Docker, o serviço `icd11` usa a imagem oficial `whoicd/icd-api` e
+fica disponível apenas para o contentor da aplicação em `http://icd11`. Antes
+do primeiro deploy desta integração, acrescente a `/opt/pulso/.env` da VPS:
+
+```env
+ICD_ACCEPT_LICENSE=true
+ICD_SAVE_ANALYTICS=false
+ICD_CONTAINER_INCLUDE=2026-01_en-es-pt
+ICD_API_RELEASE=2026-01
+ICD_API_LANGUAGE=pt
+```
+
+O primeiro arranque pode demorar enquanto a imagem e a classificação são
+descarregadas. Não é necessário criar um subdomínio nem abrir uma porta no
+firewall para a CID-11.
+
+Sem configuração, o médico não consegue registar diagnósticos novos: é
+propositado — a alternativa seria texto livre. O estado da integração aparece em
+**Configurações › Integrações e API**.
 
 ### Segurança e governação
 

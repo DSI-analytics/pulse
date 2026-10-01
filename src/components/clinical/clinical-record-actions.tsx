@@ -1,8 +1,8 @@
 import { CadastroButton } from "@/components/cadastro-form";
 import { PrescriptionButton, type MedicationOption } from "@/components/clinical/prescription-form";
+import { DiagnosisButton } from "@/components/clinical/icd-picker";
 import {
   addAllergyForPatient,
-  addDiagnosisForPatient,
   addProcedureForPatient,
   createDiagnosticOrderForPatient,
   recordVitalsForPatient,
@@ -107,43 +107,8 @@ export async function ClinicalRecordActions({
         />
       )}
 
-      {permissions.diagnosis && (
-        <CadastroButton
-          label={t("clinical.record.diagnosis.label")}
-          title={t("clinical.record.diagnosis.title")}
-          description={t("clinical.record.diagnosis.description")}
-          variant="secondary"
-          action={addDiagnosisForPatient.bind(null, patientId)}
-          fields={[
-            { name: "description", label: t("clinical.record.diagnosis.descriptionField"), required: true, full: true, placeholder: t("clinical.record.diagnosis.descriptionPlaceholder") },
-            { name: "code", label: t("clinical.record.diagnosis.code"), placeholder: t("clinical.record.diagnosis.codePlaceholder") },
-            {
-              name: "codeSystem", label: t("clinical.record.diagnosis.terminology"), type: "select", defaultValue: "ICD-10",
-              options: [
-                { value: "ICD-10", label: "ICD-10 / CID-10" },
-                { value: "ICD-11", label: "ICD-11" },
-                { value: "SNOMED-CT", label: "SNOMED CT" },
-              ],
-            },
-            {
-              name: "kind", label: t("clinical.record.diagnosis.kind"), type: "select", defaultValue: "PRINCIPAL",
-              options: (["PRINCIPAL", "SECUNDARIO", "DIFERENCIAL"] as const).map((value) => ({
-                value,
-                label: t(`clinical.record.diagnosis.kinds.${value}`),
-              })),
-            },
-            {
-              name: "certainty", label: t("clinical.record.diagnosis.certainty"), type: "select", defaultValue: "PROVISORIO",
-              options: (["PROVISORIO", "CONFIRMADO"] as const).map((value) => ({
-                value,
-                label: t(`clinical.record.diagnosis.certainties.${value}`),
-              })),
-            },
-            { name: "onsetDate", label: t("clinical.record.diagnosis.onset"), type: "date" },
-            { name: "notes", label: t("clinical.record.diagnosis.notes"), full: true },
-          ]}
-        />
-      )}
+      {/* O diagnóstico vem da CID-11 da OMS — nunca escrito à mão (só as notas são texto livre). */}
+      {permissions.diagnosis && <DiagnosisButton patientId={patientId} />}
 
       {permissions.prescription && <PrescriptionButton patientId={patientId} medications={medications} />}
 

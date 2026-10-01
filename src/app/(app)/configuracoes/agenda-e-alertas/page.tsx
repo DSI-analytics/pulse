@@ -16,6 +16,7 @@ export default async function AgendaAlertasPage() {
     select: {
       defaultSlotMinutes: true,
       defaultConsultationFee: true,
+      minBookingLeadMinutes: true,
       lowStockLeadDays: true,
       expiryWarningDays: true,
       receivableOverdueDays: true,
@@ -31,6 +32,7 @@ export default async function AgendaAlertasPage() {
           settings ?? {
             defaultSlotMinutes: 30,
             defaultConsultationFee: 150_000,
+            minBookingLeadMinutes: 0,
             lowStockLeadDays: 10,
             expiryWarningDays: 30,
             receivableOverdueDays: 30,
