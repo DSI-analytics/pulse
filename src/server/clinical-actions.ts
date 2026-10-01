@@ -12,7 +12,7 @@ import { computeBmi, parseVital, type VitalKey } from "@/lib/domain/vitals";
 import { isImmutabilityError } from "@/lib/domain/clinical-immutability";
 import { isValidIcdCode, normaliseIcdCode } from "@/lib/domain/icd";
 import { lookupIcdCode, rememberIcdCode } from "@/server/icd11";
-import { formatSequence, withNumberRetry } from "@/lib/sequences";
+import { formatSequence, nextSequenceValue, SEQUENCE_PREFIX, withNumberRetry } from "@/lib/sequences";
 import { getTranslator, getUiContext } from "@/i18n/server";
 import type { Translator } from "@/i18n/translate";
 import type { MessageKey } from "@/i18n/types";
@@ -920,7 +920,12 @@ export async function createDiagnosticOrder(values: DiagnosticOrderValues): Prom
 
   const now = new Date();
   const created = await withNumberRetry(async () => {
-    const count = await prisma.diagnosticOrder.count({ where: { clinicId: access.clinicId } });
+    const year = now.getUTCFullYear();
+    const issuedNumbers = await prisma.diagnosticOrder.findMany({
+      where: { clinicId: access.clinicId, number: { startsWith: `${SEQUENCE_PREFIX.diagnosticOrder}-${year}-` } },
+      select: { number: true },
+    });
+    const sequence = nextSequenceValue("diagnosticOrder", year, issuedNumbers.map((order) => order.number));
     return prisma.diagnosticOrder.create({
       data: {
         clinicId: access.clinicId,
@@ -928,7 +933,7 @@ export async function createDiagnosticOrder(values: DiagnosticOrderValues): Prom
         encounterId: links.encounterId,
         consultationId: links.consultationId,
         serviceId: parsed.data.serviceId || null,
-        number: formatSequence("diagnosticOrder", now.getUTCFullYear(), count + 1),
+        number: formatSequence("diagnosticOrder", year, sequence),
         category: parsed.data.category,
         name: parsed.data.name,
         code: orNull(parsed.data.code, 32),

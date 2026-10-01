@@ -29,6 +29,24 @@ export function formatSequence(kind: SequenceKind, year: number, value: number):
 }
 
 /**
+ * Obtém o próximo valor a partir dos números realmente emitidos.
+ *
+ * Não usa `count + 1`: uma eliminação ou importação histórica pode deixar a
+ * contagem abaixo do maior número e provocar colisões permanentes.
+ */
+export function nextSequenceValue(kind: SequenceKind, year: number, numbers: readonly string[]): number {
+  const prefix = `${SEQUENCE_PREFIX[kind]}-${year}-`;
+  let greatest = 0;
+  for (const number of numbers) {
+    if (!number.startsWith(prefix)) continue;
+    const suffix = number.slice(prefix.length);
+    if (!/^\d+$/.test(suffix)) continue;
+    greatest = Math.max(greatest, Number(suffix));
+  }
+  return greatest + 1;
+}
+
+/**
  * Run `attempt` up to `tries` times, re-running it whenever the write lost a
  * race on a unique number.
  */

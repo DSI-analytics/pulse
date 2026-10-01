@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { ClinicalAddendumKind } from "@prisma/client";
+import type { ClinicalAddendumKind, DiagnosticCategory, DiagnosticPriority, RevenueSource } from "@prisma/client";
 import { audit } from "@/lib/audit";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -11,6 +11,7 @@ import { can } from "@/lib/rbac";
 import { calculateInvoiceTotal, splitInvoice } from "@/lib/domain/billing";
 import { isImmutabilityError } from "@/lib/domain/clinical-immutability";
 import { formatDiagnosisSummary, isValidIcdCode, normaliseIcdCode } from "@/lib/domain/icd";
+import { formatSequence, nextSequenceValue, SEQUENCE_PREFIX, withNumberRetry } from "@/lib/sequences";
 import { lookupIcdCode, rememberIcdCode } from "@/server/icd11";
 import { getTranslator, getUiContext } from "@/i18n/server";
 import type { Translator } from "@/i18n/translate";
@@ -101,6 +102,22 @@ export interface ConsultationBillableService {
   name: string;
   category: string;
   basePrice: number;
+  source: RevenueSource;
+}
+
+export interface ConsultationDiagnosticService {
+  id: string;
+  name: string;
+  category: string;
+}
+
+export interface ConsultationDiagnosticOrder {
+  id: string;
+  serviceId: string | null;
+  number: string;
+  name: string;
+  priority: DiagnosticPriority;
+  status: string;
 }
 
 export type ConsultationActionResult = { ok: true } | { error: string };
@@ -117,6 +134,8 @@ export type ConsultationEditorResult = {
   addenda: ConsultationAddendum[];
   charges: ConsultationChargeView[];
   billableServices: ConsultationBillableService[];
+  diagnosticServices: ConsultationDiagnosticService[];
+  diagnosticOrders: ConsultationDiagnosticOrder[];
 } | { error: string };
 
 function nullable(value: string) {
@@ -186,7 +205,7 @@ export async function getConsultationEditor(appointmentId: string): Promise<Cons
     },
   });
 
-  const [addenda, billableServices] = await Promise.all([
+  const [addenda, billableServices, diagnosticOrders] = await Promise.all([
     consultation ? prisma.clinicalAddendum.findMany({
         where: { clinicId: access.user.clinicId, targetType: "CONSULTATION", targetId: consultation.id },
         orderBy: { createdAt: "asc" },
@@ -195,8 +214,13 @@ export async function getConsultationEditor(appointmentId: string): Promise<Cons
     prisma.service.findMany({
       where: { clinicId: access.user.clinicId, isActive: true, source: { in: ["EXAME", "PROCEDIMENTO", "OUTRO"] } },
       orderBy: [{ category: "asc" }, { name: "asc" }],
-      select: { id: true, name: true, category: true, basePrice: true },
+      select: { id: true, name: true, category: true, basePrice: true, source: true },
     }),
+    consultation ? prisma.diagnosticOrder.findMany({
+      where: { clinicId: access.user.clinicId, consultationId: consultation.id, status: { not: "CANCELADO" } },
+      orderBy: { requestedAt: "asc" },
+      select: { id: true, serviceId: true, number: true, name: true, priority: true, status: true },
+    }) : Promise.resolve([]),
   ]);
 
   return {
@@ -233,6 +257,10 @@ export async function getConsultationEditor(appointmentId: string): Promise<Cons
     })),
     charges: access.appointment.charges,
     billableServices,
+    diagnosticServices: billableServices
+      .filter((service) => service.source === "EXAME")
+      .map(({ id, name, category }) => ({ id, name, category })),
+    diagnosticOrders,
   };
 }
 
@@ -322,6 +350,115 @@ export async function removeConsultationCharge(
   });
   revalidatePath("/agenda");
   return { ok: true };
+}
+
+const diagnosticRequisitionSchema = z.object({
+  serviceIds: z.array(z.string().min(1)).min(1).max(30),
+  priority: z.enum(["ROTINA", "URGENTE", "EMERGENTE"]),
+  notes: z.string().trim().max(2000),
+});
+
+function diagnosticCategory(category: string): DiagnosticCategory {
+  const value = category.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/(imagem|imagiologia|radiologia|ecografia|ultrassom|raio|tomografia|ressonancia)/.test(value)) {
+    return "IMAGIOLOGIA";
+  }
+  if (/(laboratorio|analise|hematologia|bioquimica|microbiologia)/.test(value)) {
+    return "LABORATORIO";
+  }
+  return "OUTRO";
+}
+
+/** Cria uma requisição clínica; pedir o exame não o fatura nem o marca como realizado. */
+export async function createConsultationDiagnosticRequisition(
+  appointmentId: string,
+  input: { serviceIds: string[]; priority: DiagnosticPriority; notes: string },
+): Promise<{ orders: ConsultationDiagnosticOrder[] } | { error: string }> {
+  const t = await getTranslator();
+  const access = await clinicalAccess(appointmentId, t);
+  if (!access.ok) return { error: access.error };
+  const parsed = diagnosticRequisitionSchema.safeParse(input);
+  if (!parsed.success) return { error: t("consultations.requisition.errors.invalid") };
+
+  const consultation = await prisma.consultation.findUnique({
+    where: { appointmentId: access.appointment.id },
+    select: { id: true, encounterId: true },
+  });
+  if (!consultation) return { error: t("consultations.requisition.errors.startFirst") };
+
+  const serviceIds = Array.from(new Set(parsed.data.serviceIds));
+  const [services, existing] = await Promise.all([
+    prisma.service.findMany({
+      where: { id: { in: serviceIds }, clinicId: access.user.clinicId, isActive: true, source: "EXAME" },
+      orderBy: [{ category: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, category: true },
+    }),
+    prisma.diagnosticOrder.findMany({
+      where: {
+        clinicId: access.user.clinicId,
+        consultationId: consultation.id,
+        serviceId: { in: serviceIds },
+        status: { not: "CANCELADO" },
+      },
+      select: { serviceId: true },
+    }),
+  ]);
+  if (services.length !== serviceIds.length) return { error: t("consultations.requisition.errors.serviceNotFound") };
+
+  const existingIds = new Set(existing.map((order) => order.serviceId).filter(Boolean));
+  const pending = services.filter((service) => !existingIds.has(service.id));
+  if (!pending.length) return { error: t("consultations.requisition.errors.duplicate") };
+
+  const now = new Date();
+  const created = await withNumberRetry(async () => prisma.$transaction(async (tx) => {
+    const year = now.getUTCFullYear();
+    const issuedNumbers = await tx.diagnosticOrder.findMany({
+      where: { clinicId: access.user.clinicId, number: { startsWith: `${SEQUENCE_PREFIX.diagnosticOrder}-${year}-` } },
+      select: { number: true },
+    });
+    const firstSequence = nextSequenceValue("diagnosticOrder", year, issuedNumbers.map((order) => order.number));
+    const orders: ConsultationDiagnosticOrder[] = [];
+    for (const [index, service] of pending.entries()) {
+      orders.push(await tx.diagnosticOrder.create({
+        data: {
+          clinicId: access.user.clinicId,
+          patientId: access.appointment.patientId,
+          encounterId: consultation.encounterId ?? access.appointment.encounterId,
+          consultationId: consultation.id,
+          serviceId: service.id,
+          number: formatSequence("diagnosticOrder", year, firstSequence + index),
+          category: diagnosticCategory(service.category),
+          name: service.name,
+          priority: parsed.data.priority,
+          requestedAt: now,
+          doctorId: access.appointment.doctorId,
+          requestedById: access.user.userId,
+          notes: nullable(parsed.data.notes),
+        },
+        select: { id: true, serviceId: true, number: true, name: true, priority: true, status: true },
+      }));
+    }
+    return orders;
+  }));
+
+  await audit({
+    clinicId: access.user.clinicId,
+    userId: access.user.userId,
+    action: "lab.requisition.create",
+    entity: "Consultation",
+    entityId: consultation.id,
+    metadata: {
+      appointmentId: access.appointment.id,
+      orderIds: created.map((order) => order.id),
+      serviceIds: created.map((order) => order.serviceId),
+      priority: parsed.data.priority,
+    },
+  });
+  revalidatePath("/agenda");
+  revalidatePath("/consultas");
+  revalidatePath(`/pacientes/${access.appointment.patientId}`);
+  revalidatePath(`/consultas/${access.appointment.id}/requisicao-exames`);
+  return { orders: created };
 }
 
 export async function saveConsultation(

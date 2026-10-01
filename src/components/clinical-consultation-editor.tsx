@@ -12,10 +12,13 @@ import {
   saveConsultation,
   type ConsultationBillableService,
   type ConsultationChargeView,
+  type ConsultationDiagnosticOrder,
+  type ConsultationDiagnosticService,
   type ConsultationValues,
 } from "@/server/consultation-actions";
 import { useToast } from "@/components/toast";
 import { AddendumButton, AddendumList, type ClinicalAddendumView } from "@/components/clinical/addendum-dialog";
+import { DiagnosticRequisition } from "@/components/clinical/diagnostic-requisition";
 import { IcdPicker, type IcdSelection } from "@/components/clinical/icd-picker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -56,6 +59,8 @@ type EditorExtras = {
   consultationId?: string | null;
   charges?: ConsultationChargeView[];
   billableServices?: ConsultationBillableService[];
+  diagnosticServices?: ConsultationDiagnosticService[];
+  diagnosticOrders?: ConsultationDiagnosticOrder[];
 };
 
 /**
@@ -100,6 +105,8 @@ export function ClinicalConsultationEditor({
   const [consultationId, setConsultationId] = React.useState("");
   const [charges, setCharges] = React.useState<ConsultationChargeView[]>([]);
   const [billableServices, setBillableServices] = React.useState<ConsultationBillableService[]>([]);
+  const [diagnosticServices, setDiagnosticServices] = React.useState<ConsultationDiagnosticService[]>([]);
+  const [diagnosticOrders, setDiagnosticOrders] = React.useState<ConsultationDiagnosticOrder[]>([]);
   const [selectedServiceId, setSelectedServiceId] = React.useState("");
   const [chargeQuantity, setChargeQuantity] = React.useState("1");
   const [chargeSaving, setChargeSaving] = React.useState(false);
@@ -123,6 +130,8 @@ export function ClinicalConsultationEditor({
     setConsultationId(extras.consultationId ?? "");
     setCharges(extras.charges ?? []);
     setBillableServices(extras.billableServices ?? []);
+    setDiagnosticServices(extras.diagnosticServices ?? []);
+    setDiagnosticOrders(extras.diagnosticOrders ?? []);
     setSelectedServiceId("");
     setChargeQuantity("1");
   }
@@ -277,6 +286,12 @@ export function ClinicalConsultationEditor({
                   <p className="mt-1.5 text-sm text-muted-foreground">—</p>
                 )}
               </div>
+
+              <DiagnosticRequisition
+                appointmentId={appointmentId}
+                services={diagnosticServices}
+                initialOrders={diagnosticOrders}
+              />
 
               <div className="md:col-span-2 rounded-[14px] border border-border bg-surface-2 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
