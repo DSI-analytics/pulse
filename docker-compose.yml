@@ -55,6 +55,9 @@ services:
       SMTP_USER: ${SMTP_USER:-geral@dsianalytics.eu}
       SMTP_PASSWORD: ${SMTP_PASSWORD:?defina SMTP_PASSWORD no .env}
       EMAIL_FROM: ${EMAIL_FROM:-Pulso <geral@dsianalytics.eu>}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:?defina FIREBASE_PROJECT_ID no .env}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:?defina FIREBASE_CLIENT_EMAIL no .env}
+      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:?defina FIREBASE_PRIVATE_KEY no .env}
       APP_TZ: Africa/Maputo
       APP_CURRENCY: MZN
       APP_LOCALE: pt
