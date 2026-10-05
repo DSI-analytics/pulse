@@ -12,6 +12,7 @@ import { formatMZNExact } from "@/lib/money";
 import type { PatientPortalContext } from "@/lib/patient-portal-auth";
 import { prisma } from "@/lib/prisma";
 import { getMinimumBookingLeadMinutes } from "@/server/booking-policy";
+import { notifyDoctor } from "@/server/doctor-push-notifications";
 
 const ACTIVE_APPOINTMENT_STATUSES = ["MARCADA", "CONFIRMADA", "CHEGOU", "EM_ESPERA", "EM_CONSULTA"] as const;
 
@@ -264,18 +265,39 @@ export async function createPatientAppointment(context: PatientPortalContext, in
     return created;
   });
   await audit({ clinicId: context.clinicId, action: "patient_portal.appointment_create", entity: "Appointment", entityId: appointment.id, metadata: { patientId: context.patientId, doctorId: doctor.id, startAt: startAt.toISOString() } });
+  await notifyDoctor({
+    doctorId: doctor.id,
+    clinicId: context.clinicId,
+    category: "appointments",
+    type: "MARCACAO",
+    title: "Nova consulta agendada pelo paciente",
+    body: formatInTimeZone(startAt, CLINIC_TZ, "dd/MM/yyyy 'às' HH:mm"),
+    entity: "Appointment",
+    entityId: appointment.id,
+  });
   return { id: appointment.id };
 }
 
 export async function cancelPatientAppointment(context: PatientPortalContext, appointmentId: string) {
   const appointment = await prisma.appointment.findFirst({
     where: { id: appointmentId, patientId: context.patientId, clinicId: context.clinicId },
-    select: { id: true, status: true, startAt: true },
+    select: { id: true, status: true, startAt: true, doctorId: true, patient: { select: { name: true } } },
   });
   if (!appointment) return { error: "Marcação não encontrada." };
   if (!["MARCADA", "CONFIRMADA"].includes(appointment.status) || appointment.startAt <= new Date()) return { error: "Esta marcação já não pode ser cancelada pelo portal." };
   await prisma.appointment.update({ where: { id: appointment.id }, data: { status: "CANCELADA", cancelReason: "Cancelada pelo paciente através do portal" } });
   await audit({ clinicId: context.clinicId, action: "patient_portal.appointment_cancel", entity: "Appointment", entityId: appointment.id, metadata: { patientId: context.patientId } });
+  await notifyDoctor({
+    doctorId: appointment.doctorId,
+    clinicId: context.clinicId,
+    category: "cancellations",
+    type: "CANCELAMENTO",
+    severity: "AVISO",
+    title: "Consulta cancelada pelo paciente",
+    body: `${appointment.patient.name} · ${formatInTimeZone(appointment.startAt, CLINIC_TZ, "dd/MM/yyyy 'às' HH:mm")}`,
+    entity: "Appointment",
+    entityId: appointment.id,
+  });
   return { ok: true };
 }
 

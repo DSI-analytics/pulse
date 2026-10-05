@@ -241,7 +241,10 @@ de exames. Tudo em MZN e **inteiramente fictício**.
 
 ## Testes
 
-135 testes cobrem a lógica crítica (pura, sem BD):
+Para validação manual das funcionalidades recentes, consulte o
+[`GUIA_TESTES_NOVAS_FUNCIONALIDADES.md`](./GUIA_TESTES_NOVAS_FUNCIONALIDADES.md).
+
+203 testes cobrem a lógica crítica (pura, sem BD):
 
 - **Prevenção de duplo agendamento** e geração de vagas (`availability`)
 - **Cálculo de ocupação**, utilização, no-show, receita/hora (`occupancy`)

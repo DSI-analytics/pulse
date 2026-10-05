@@ -375,6 +375,7 @@ model Clinic {
   inventoryMovements    InventoryMovement[]
   purchases             Purchase[]
   notifications         Notification[]
+  mobilePushDevices     MobilePushDevice[]
   auditLogs             AuditLog[]
   patientPortalAccesses PatientPortalAccess[]
   userAccess            UserClinicAccess[]
@@ -470,19 +471,21 @@ model User {
   passwordResetCodes  PasswordResetCode[]
   clinicAccess        UserClinicAccess[]
 
-  createdPatients      Patient[]            @relation("PatientCreatedBy")
-  createdEncounters    Encounter[]          @relation("EncounterCreatedBy")
-  recordedVitalSigns   VitalSign[]          @relation("VitalSignRecordedBy")
-  recordedDiagnoses    Diagnosis[]          @relation("DiagnosisRecordedBy")
-  recordedAllergies    Allergy[]            @relation("AllergyRecordedBy")
-  createdPrescriptions Prescription[]       @relation("PrescriptionCreatedBy")
-  requestedOrders      DiagnosticOrder[]    @relation("DiagnosticOrderRequestedBy")
-  validatedResults     DiagnosticResult[]   @relation("DiagnosticResultValidatedBy")
-  recordedProcedures   ClinicalProcedure[]  @relation("ProcedureRecordedBy")
-  createdAdmissions    Admission[]          @relation("AdmissionCreatedBy")
-  uploadedAttachments  ClinicalAttachment[] @relation("AttachmentUploadedBy")
-  notifications        Notification[]
-  clinicalAddenda      ClinicalAddendum[]   @relation("AddendumAuthor")
+  createdPatients              Patient[]                     @relation("PatientCreatedBy")
+  createdEncounters            Encounter[]                   @relation("EncounterCreatedBy")
+  recordedVitalSigns           VitalSign[]                   @relation("VitalSignRecordedBy")
+  recordedDiagnoses            Diagnosis[]                   @relation("DiagnosisRecordedBy")
+  recordedAllergies            Allergy[]                     @relation("AllergyRecordedBy")
+  createdPrescriptions         Prescription[]                @relation("PrescriptionCreatedBy")
+  requestedOrders              DiagnosticOrder[]             @relation("DiagnosticOrderRequestedBy")
+  validatedResults             DiagnosticResult[]            @relation("DiagnosticResultValidatedBy")
+  recordedProcedures           ClinicalProcedure[]           @relation("ProcedureRecordedBy")
+  createdAdmissions            Admission[]                   @relation("AdmissionCreatedBy")
+  uploadedAttachments          ClinicalAttachment[]          @relation("AttachmentUploadedBy")
+  notifications                Notification[]
+  doctorNotificationPreference DoctorNotificationPreference?
+  mobilePushDevices            MobilePushDevice[]
+  clinicalAddenda              ClinicalAddendum[]            @relation("AddendumAuthor")
 
   @@unique([clinicId, email])
   @@index([clinicId])
@@ -1274,6 +1277,38 @@ model Notification {
   @@index([clinicId, isRead])
   @@index([clinicId, createdAt])
   @@index([userId, isRead])
+}
+
+/// Preferências de alertas da aplicação móvel do médico.
+model DoctorNotificationPreference {
+  userId         String   @id
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments   Boolean  @default(true)
+  checkIns       Boolean  @default(true)
+  cancellations  Boolean  @default(true)
+  clinicalAlerts Boolean  @default(true)
+  examResults    Boolean  @default(true)
+  reminders      Boolean  @default(true)
+  pushEnabled    Boolean  @default(true)
+  updatedAt      DateTime @updatedAt
+}
+
+/// Dispositivos autorizados a receber push de um utilizador.
+model MobilePushDevice {
+  id         String   @id @default(cuid())
+  clinicId   String
+  clinic     Clinic   @relation(fields: [clinicId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  platform   String
+  isActive   Boolean  @default(true)
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, isActive])
+  @@index([clinicId])
 }
 
 /// Append-only audit trail. A database trigger (see migration

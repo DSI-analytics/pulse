@@ -7,10 +7,10 @@ import { NextResponse, type NextRequest } from "next/server";
 //
 // It also stamps every request with a correlation id and its path/method so the
 // audit service can attribute entries without each caller passing them down.
-// Rotas que não dependem da sessão da aplicação. `/api/patient`,
+// Rotas que não dependem da sessão da aplicação. `/api/patient`, `/api/doctor`,
 // `/api/public/booking` e `/fhir` autenticam-se com token próprio (Bearer),
 // verificado dentro de cada handler.
-const PUBLIC = ["/login", "/recuperar-senha", "/sem-acesso", "/api/patient", "/api/public/booking", "/fhir"];
+const PUBLIC = ["/login", "/recuperar-senha", "/sem-acesso", "/api/patient", "/api/doctor", "/api/public/booking", "/fhir"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

@@ -12,6 +12,7 @@ import { isStartBookable, minimumBookableAt } from "@/lib/domain/booking-policy"
 import { CLINIC_TZ } from "@/lib/datetime";
 import { getTranslator } from "@/i18n/server";
 import { getMinimumBookingLeadMinutes } from "@/server/booking-policy";
+import { notifyDoctor } from "@/server/doctor-push-notifications";
 
 export interface BookingContext {
   specialties: { id: string; name: string; color: string }[];
@@ -234,7 +235,7 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
 
   const patient = await prisma.patient.findFirst({
     where: { id: data.patientId, clinicId: user.clinicId },
-    select: { id: true },
+    select: { id: true, name: true },
   });
   if (!patient) return { error: t("agenda.booking.errors.patientNotFound") };
 
@@ -363,6 +364,17 @@ export async function createAppointment(input: z.input<typeof createSchema>) {
     entity: "Appointment",
     entityId: appt.id,
     metadata: { doctorId: doctor.id, startAt: startAt.toISOString() },
+  });
+
+  await notifyDoctor({
+    doctorId: doctor.id,
+    clinicId: user.clinicId,
+    category: "appointments",
+    type: "MARCACAO",
+    title: "Nova consulta agendada",
+    body: `${patient.name} · ${formatInTimeZone(startAt, CLINIC_TZ, "dd/MM/yyyy 'às' HH:mm")}`,
+    entity: "Appointment",
+    entityId: appt.id,
   });
 
   revalidatePath("/agenda");

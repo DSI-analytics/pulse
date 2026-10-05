@@ -16,6 +16,7 @@ import { formatSequence, nextSequenceValue, SEQUENCE_PREFIX, withNumberRetry } f
 import { getTranslator, getUiContext } from "@/i18n/server";
 import type { Translator } from "@/i18n/translate";
 import type { MessageKey } from "@/i18n/types";
+import { notifyDoctor } from "@/server/doctor-push-notifications";
 
 /**
  * Escrita no prontuário clínico electrónico.
@@ -625,6 +626,19 @@ export async function addAllergy(values: AllergyValues): Promise<ActionResult<{ 
         requiredPermission: "consultation.viewClinical",
       },
     });
+    if (access.user.doctorId) {
+      await notifyDoctor({
+        doctorId: access.user.doctorId,
+        clinicId: access.clinicId,
+        category: "clinicalAlerts",
+        type: "ALERTA_CLINICO",
+        severity: "CRITICO",
+        title: `Alergia grave — ${patient.name}`,
+        body: `${created.substance} (${created.severity.toLowerCase()})`,
+        entity: "Patient",
+        entityId: patient.id,
+      });
+    }
   }
 
   revalidatePatient(patient.id);
@@ -1031,7 +1045,7 @@ export async function recordDiagnosticResult(values: DiagnosticResultValues): Pr
 
   const order = await prisma.diagnosticOrder.findFirst({
     where: { id: parsed.data.orderId, clinicId: access.clinicId },
-    select: { id: true, patientId: true, name: true, status: true, patient: { select: { name: true } }, result: { select: { id: true } } },
+    select: { id: true, patientId: true, doctorId: true, name: true, status: true, patient: { select: { name: true } }, result: { select: { id: true } } },
   });
   if (!order) return { error: access.t("clinical.errors.orderNotFound") };
   if (order.status === "CANCELADO") return { error: access.t("clinical.errors.orderCancelled") };
@@ -1105,6 +1119,19 @@ export async function recordDiagnosticResult(values: DiagnosticResultValues): Pr
     after: { orderId: order.id, items: parsed.data.items.length, validated: parsed.data.validate },
     metadata: { patientId: order.patientId },
   });
+  if (order.doctorId) {
+    await notifyDoctor({
+      doctorId: order.doctorId,
+      clinicId: access.clinicId,
+      category: "examResults",
+      type: "RESULTADO_EXAME",
+      severity: parsed.data.items.some((item) => item.isAbnormal) ? "AVISO" : "INFO",
+      title: `Resultado disponível — ${order.name}`,
+      body: `Paciente ${order.patient.name}`,
+      entity: "DiagnosticOrder",
+      entityId: order.id,
+    });
+  }
   revalidatePatient(order.patientId);
   return { ok: true, id: saved.id };
 }

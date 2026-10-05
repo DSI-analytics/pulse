@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import type { PublicBookingPrincipal } from "@/lib/public-booking-auth";
 import { formatSequence, withNumberRetry } from "@/lib/sequences";
 import { getMinimumBookingLeadMinutes } from "@/server/booking-policy";
+import { notifyDoctor } from "@/server/doctor-push-notifications";
 
 /**
  * Marcação online a partir do website institucional — o canal público.
@@ -363,7 +364,9 @@ export async function createPublicBookingRequest(
           body: `${data.name} pediu ${doctor.specialty.name} com ${doctor.name} em ${formatInTimeZone(startAt, CLINIC_TZ, "dd/MM/yyyy 'às' HH:mm")}. Confirmar por telefone: ${data.phone}.`,
           entity: "Appointment",
           entityId: appointment.id,
-          requiredPermission: "appointment.view",
+          // A receção vê o alerta global; o médico recebe outro alerta pessoal
+          // (e push) abaixo, sem duplicar a notificação na aplicação móvel.
+          requiredPermission: "appointment.manage",
         },
       });
 
@@ -402,6 +405,17 @@ export async function createPublicBookingRequest(
       fichaNova: created.isNewPatient,
       startAt: startAt.toISOString(),
     },
+  });
+
+  await notifyDoctor({
+    doctorId: doctor.id,
+    clinicId: principal.clinicId,
+    category: "appointments",
+    type: "MARCACAO",
+    title: "Nova marcação online",
+    body: `${data.name} · ${formatInTimeZone(startAt, CLINIC_TZ, "dd/MM/yyyy 'às' HH:mm")}`,
+    entity: "Appointment",
+    entityId: created.appointmentId,
   });
 
   return {
